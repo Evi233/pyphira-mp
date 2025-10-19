@@ -1,5 +1,4 @@
-# room.py (修改后)
-
+from rymc.phira.protocol.data.state import *
 # 全局房间“列表”（实际是 dict）
 rooms = {}
 
@@ -14,7 +13,7 @@ class Room:
     def __init__(self, room_id):
         self.id = room_id
         self.host = None
-        self.state = None
+        self.state = SelectChart(None)
         self.live = False
         self.locked = False
         self.cycle = False
@@ -50,9 +49,12 @@ def add_user(room_id, user_info, connection):
     0: 成功
     1: 房间不存在
     2: 用户已存在"""
+    print("[add_user]called as"+room_id+",userid:"+str(user_info.id))
     if room_id not in rooms:            # 房间不存在
+        print("room 消失了")
         return {"status": "1"}
     if user_info.id in rooms[room_id].users: # 用户已存在
+        print("user 存在"+str(user_info.id))
         return {"status": "2"}
     # 【修改】现在存储 RoomUser 实例，而不是直接存储 user_info
     rooms[room_id].users[user_info.id] = RoomUser(user_info, connection)
@@ -82,7 +84,7 @@ def change_host(room_id, host_id):
     返回定义:
     0: 成功
     1: 房间不存在
-    2: 新主机不存在"""
+    2: 新房主不存在"""
     if room_id not in rooms:            # 房间不存在
         return {"status": "1"}
     if host_id not in rooms[room_id].users: # 新房主不存在
