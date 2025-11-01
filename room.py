@@ -60,6 +60,18 @@ def add_user(room_id, user_info, connection):
     rooms[room_id].users[user_info.id] = RoomUser(user_info, connection)
     return {"status": "0"}
 
+def remove_user(room_id, user_id):
+    """Remove a user from the room.
+    返回定义:
+    0: 成功
+    1: 房间不存在
+    2: 用户不存在"""
+    if room_id not in rooms:            # 房间不存在
+        return {"status": "1"}
+    if user_id not in rooms[room_id].users: # 用户不存在
+        return {"status": "2"}
+    del rooms[room_id].users[user_id]
+    return {"status": "0"}
 def add_monitor(room_id, monitor_id):
     """Add a monitor to the room.
     返回定义:

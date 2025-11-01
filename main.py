@@ -1,5 +1,3 @@
-# main.py (修改后)
-
 from connection import Connection
 from phiraapi import PhiraFetcher
 from rymc.phira.protocol.data import UserProfile
@@ -76,6 +74,7 @@ class MainHandler(SimplePacketHandler):
                 room_state = get_room_state(packet.roomId)["state"]
                 #获取所有用户
                 users = get_all_users(packet.roomId)["users"]
+                user_profiles = [UserProfile(user.info.id, user.info.name) for user  in users.values()]
                 #获取所有监控者
                 monitors = get_all_monitors(packet.roomId)["monitors"]
                 #检查是否是直播
@@ -95,7 +94,7 @@ class MainHandler(SimplePacketHandler):
                     connection.send(packet)
                 #通知自己
                 #4 required positional arguments: 'gameState', 'users', 'monitors', and 'isLive'
-                packet = ClientBoundJoinRoomPacket.Success(gameState=room_state, users=users, monitors=monitors, isLive=islive)
+                packet = ClientBoundJoinRoomPacket.Success(gameState=room_state, users=user_profiles, monitors=monitors, isLive=islive)
                 self.connection.send(packet)
             elif join_room_result == {"status": "1"}:
                 #房间不存在
