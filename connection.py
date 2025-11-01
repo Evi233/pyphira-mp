@@ -10,6 +10,7 @@ class Connection:
     def __init__(self, writer: asyncio.StreamWriter):
         self.writer = writer
         self.receiver = None
+        self.closeHandler = None
 
     def send(self, packet):
         data = PacketRegistry.encode(packet).toBytes()
@@ -32,3 +33,7 @@ class Connection:
 
     async def _wait_closed(self):
         await self.writer.wait_closed()
+
+    def on_close(self, close_handler):
+        self.closeHandler = close_handler
+

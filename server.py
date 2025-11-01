@@ -13,9 +13,9 @@ class Server:
         client_version = (await reader.readexactly(1))[0]
         print("Connected", addr)
         print("Version", client_version)
+        connection = Connection(writer)
 
         try:
-            connection = Connection(writer)
             self.handler(connection)
             while True:
                 connection.on_receive(await receive_message(reader))
@@ -24,6 +24,7 @@ class Server:
         finally:
             writer.close()
             await writer.wait_closed()
+            connection.closeHandler(reader, writer)
 
     async def start(self):
         server = await asyncio.start_server(self.handle_client, self.host, self.port)
