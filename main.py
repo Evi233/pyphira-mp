@@ -27,6 +27,20 @@ class MainHandler(SimplePacketHandler):
         self.connection.send(packet)
         packet = ClientBoundMessagePacket(ChatMessage(-1,"你正在一个早期的 pphira-mp 测试实例上游玩"))
         self.connection.send(packet)
+    def on_player_disconnected(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        """
+        当玩家断开连接时，这个方法会被调用。
+        可以在这里做一些清理工作，比如把玩家从房间里移除。
+        """
+        addr = writer.get_extra_info('peername')
+        print(f"玩家 {addr} 断开连接了。")
+
+        # 检查这个玩家是否已经鉴权（登录），并且有 user_info 信息
+        if hasattr(self, 'user_info') and self.user_info:
+            print(f"用户 [{self.user_info.id}] {self.user_info.name} 下线。")
+            remove_user_from_all_rooms(self.user_info.id)
+            #释放资源
+            del self.user_info
 
     def handleCreateRoom(self, packet: ServerBoundCreateRoomPacket) -> None:
         print("Create room with id", packet.roomId)
@@ -109,6 +123,7 @@ class MainHandler(SimplePacketHandler):
 def handle_connection(connection: Connection):
     handler = MainHandler(connection)
     connection.set_receiver(lambda packet: packet.handle(handler))
+    connection.on_close(handler.on_player_disconnected)
 
 if __name__ == '__main__':
     server = Server(HOST, PORT, handle_connection)

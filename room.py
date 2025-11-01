@@ -60,18 +60,6 @@ def add_user(room_id, user_info, connection):
     rooms[room_id].users[user_info.id] = RoomUser(user_info, connection)
     return {"status": "0"}
 
-def remove_user(room_id, user_id):
-    """Remove a user from the room.
-    返回定义:
-    0: 成功
-    1: 房间不存在
-    2: 用户不存在"""
-    if room_id not in rooms:            # 房间不存在
-        return {"status": "1"}
-    if user_id not in rooms[room_id].users: # 用户不存在
-        return {"status": "2"}
-    del rooms[room_id].users[user_id]
-    return {"status": "0"}
 def add_monitor(room_id, monitor_id):
     """Add a monitor to the room.
     返回定义:
@@ -230,3 +218,28 @@ def is_live(room_id):
     if room_id not in rooms:            # 房间不存在
         return {"status": "1"}
     return {"status": "0", "isLive": rooms[room_id].live}
+
+#---群体操作---
+def remove_user_from_all_rooms(user_id):
+    """Remove a user from all rooms.
+    返回定义:
+    0: 成功 (用户至少从一个房间被移除)
+    1: 用户不存在于任何房间"""
+    
+    user_was_in_a_room = False # 标志，用于判断用户是否至少从一个房间被移除了
+    
+    # 遍历所有房间的 ID
+    # 使用 list(rooms.keys()) 是为了在遍历时避免字典结构被修改可能导致的问题，虽然这里不会发生
+    for room_id in list(rooms.keys()):
+        # 调用 player_leave 尝试从当前房间移除用户
+        result = player_leave(room_id, user_id)
+        
+        # 如果 player_leave 返回状态 0 (成功移除)
+        if result.get("status") == "0":
+            user_was_in_a_room = True # 标记为 True，表示用户至少在一个房间中被发现并移除了
+            
+    if user_was_in_a_room:
+        return {"status": "0"} # 用户至少从一个房间被移除，视为成功
+    else:
+        # 如果循环结束，user_was_in_a_room 仍然是 False，说明用户不在任何房间
+        return {"status": "1"} # 用户不存在于任何房间
