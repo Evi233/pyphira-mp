@@ -22,9 +22,7 @@ class Server:
         except (asyncio.IncompleteReadError, ConnectionResetError):
             print("Client disconnected", addr)
         finally:
-            writer.close()
-            await writer.wait_closed()
-            connection.closeHandler(reader, writer)
+            connection.close()
 
     async def start(self):
         server = await asyncio.start_server(self.handle_client, self.host, self.port)

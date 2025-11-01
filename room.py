@@ -220,6 +220,18 @@ def is_live(room_id):
     return {"status": "0", "isLive": rooms[room_id].live}
 
 #---群体操作---
+#获取一个人所在的所有房间
+def get_rooms_of_user(user_id):
+    """Get all rooms that a user is in.
+    返回定义:
+    0: 成功"""
+    #TODO:1:用户不存在
+    rooms_of_user = []
+    for room_id in rooms:
+        if user_id in rooms[room_id].users:
+            rooms_of_user.append(room_id)
+    return {"status": "0", "rooms": rooms_of_user}
+
 def remove_user_from_all_rooms(user_id):
     """Remove a user from all rooms.
     返回定义:

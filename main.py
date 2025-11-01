@@ -10,7 +10,7 @@ from server import Server
 from i10n import get_i10n_text
 import asyncio
 
-HOST = '0.0.0.0'  # 监听所有网卡，本地测试可用 '127.0.0.1'
+HOST = '0.0.0.0'
 PORT = 12346
 FETCHER = PhiraFetcher()
 
@@ -25,21 +25,35 @@ class MainHandler(SimplePacketHandler):
 
         packet = ClientBoundMessagePacket(ChatMessage(-1, f"你好 [{user_info.id}] {user_info.name}"))
         self.connection.send(packet)
-        packet = ClientBoundMessagePacket(ChatMessage(-1,"你正在一个早期的 pphira-mp 测试实例上游玩"))
+        packet = ClientBoundMessagePacket(ChatMessage(-1,"你正在一个早期的 pphira-mp 测试实例上游玩，功能不完整"))
         self.connection.send(packet)
-    def on_player_disconnected(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        packet = ClientBoundMessagePacket(ChatMessage(-1,"Phira协议 by lRENyaaa"))
+        self.connection.send(packet)
+        packet = ClientBoundMessagePacket(ChatMessage(-1,"逻辑 by Evi233"))
+        self.connection.send(packet)
+    def on_player_disconnected(self) -> None:
         """
         当玩家断开连接时，这个方法会被调用。
         可以在这里做一些清理工作，比如把玩家从房间里移除。
         """
-        addr = writer.get_extra_info('peername')
-        print(f"玩家 {addr} 断开连接了。")
-
         # 检查这个玩家是否已经鉴权（登录），并且有 user_info 信息
         if hasattr(self, 'user_info') and self.user_info:
             print(f"用户 [{self.user_info.id}] {self.user_info.name} 下线。")
-            remove_user_from_all_rooms(self.user_info.id)
-            #释放资源
+            # 获取这个用户所在的所有房间
+            rooms_of_user = get_rooms_of_user(self.user_info.id)
+            if rooms_of_user["status"] == "0":
+                for room_id in rooms_of_user["rooms"]:
+                    # 从房间里移除玩家
+                    player_leave(room_id, self.user_info.id)
+                    # 提醒这些房间里的所有其他玩家
+                    packet = ClientBoundMessagePacket(
+                        LeaveRoomMessage(self.user_info.id, self.user_info.name))
+                    # 广播给房间里的其他人
+                    for _, room_user in rooms[room_id].users.items():
+                        if room_user.connection != self.connection:
+                            room_user.connection.send(packet)
+
+            # 释放资源
             del self.user_info
 
     def handleCreateRoom(self, packet: ServerBoundCreateRoomPacket) -> None:
@@ -122,8 +136,13 @@ class MainHandler(SimplePacketHandler):
 
 def handle_connection(connection: Connection):
     handler = MainHandler(connection)
+
+    #WARNING:傻逼嵌套def
+    def on_disconnect():
+        handler.on_player_disconnected()
+
     connection.set_receiver(lambda packet: packet.handle(handler))
-    connection.on_close(handler.on_player_disconnected)
+    connection.on_close(on_disconnect)
 
 if __name__ == '__main__':
     server = Server(HOST, PORT, handle_connection)

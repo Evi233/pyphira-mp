@@ -30,6 +30,11 @@ class Connection:
     def close(self):
         self.writer.close()
         asyncio.create_task(self._wait_closed())
+        if self.closeHandler:
+            try:
+                self.closeHandler()          # 不需要任何参数
+            except Exception as e:
+                print('[Connection] closeHandler 异常:', e)
 
     async def _wait_closed(self):
         await self.writer.wait_closed()
