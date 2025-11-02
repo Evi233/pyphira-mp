@@ -14,6 +14,7 @@
     "monitor_remove_failure": "监控移除失败",
     "monitor_cycle_success": "监控循环成功",
     "monitor_cycle_failure": "监控循环失败",
-    "monitor_cycle_not_exist": "监控循环不存在"
+    "monitor_cycle_not_exist": "监控循环不存在",
+    "not_host": "您不是房主"
 
 }

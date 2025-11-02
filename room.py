@@ -10,8 +10,8 @@ class RoomUser:
         self.connection = connection # 存储 Connection 对象
 
 class Room:
-    def __init__(self, room_id):
-        self.id = room_id
+    def __init__(self, roomId):
+        self.id = roomId
         self.host = None
         self.state = SelectChart(None)
         self.live = False
@@ -33,134 +33,155 @@ except FileNotFoundError:
     print("monitors.txt not found. No monitors loaded.")
 
 
-def create_room(room_id):
+def create_room(roomId, user_info):
     """Create a room with the given ID.
     房间创建返回定义:
     0: 成功
     1: 房间已存在"""
-    if room_id in rooms:                 # 已存在
+    if roomId in rooms:                 # 已存在
         return {"status": "1"}
-    rooms[room_id] = Room(room_id)       # 初始化并放入字典
+    rooms[roomId] = Room(roomId)       # 初始化并放入字典
+    # 设置房主
+    rooms[roomId].host = user_info.id
     return {"status": "0"}
 
-def add_user(room_id, user_info, connection):
+def add_user(roomId, user_info, connection):
     """Add a user to the room.
     返回定义:
     0: 成功
     1: 房间不存在
     2: 用户已存在"""
-    print("[add_user]called as"+room_id+",userid:"+str(user_info.id))
-    if room_id not in rooms:            # 房间不存在
+    print("[add_user]called as"+ roomId +",userid:"+str(user_info.id))
+    if roomId not in rooms:            # 房间不存在
         print("room 消失了")
         return {"status": "1"}
-    if user_info.id in rooms[room_id].users: # 用户已存在
+    if user_info.id in rooms[roomId].users: # 用户已存在
         print("user 存在"+str(user_info.id))
         return {"status": "2"}
     # 【修改】现在存储 RoomUser 实例，而不是直接存储 user_info
-    rooms[room_id].users[user_info.id] = RoomUser(user_info, connection)
+    rooms[roomId].users[user_info.id] = RoomUser(user_info, connection)
     return {"status": "0"}
 
-def add_monitor(room_id, monitor_id):
+def add_monitor(roomId, monitor_id):
     """Add a monitor to the room.
     返回定义:
     0: 成功
     1: 房间不存在
     2: 监控已存在
     3: 无监控权限"""
-    if room_id not in rooms:            # 房间不存在
+    if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
-    if monitor_id in rooms[room_id].monitors: # 监控已存在
+    if monitor_id in rooms[roomId].monitors: # 监控已存在
         return {"status": "2"}
     if monitor_id not in monitors: # 无监控权限 (检查全局 monitors 列表)
         return {"status": "3"}
-    rooms[room_id].monitors.append(monitor_id)
+    rooms[roomId].monitors.append(monitor_id)
     # 设置live为True
-    if not rooms[room_id].live:
-        rooms[room_id].live = True
+    if not rooms[roomId].live:
+        rooms[roomId].live = True
     return {"status": "0"}
 
-def change_host(room_id, host_id):
+def get_host(roomId):
+    """Get the host of the room.
+    返回定义:
+    0: 成功
+    1: 房间不存在"""
+    if roomId not in rooms:            # 房间不存在
+        return {"status": "1"}
+    print(rooms[roomId].host)
+    return {"host": rooms[roomId].host}
+
+def get_roomId(user_id):
+    """Get the room ID of the user.
+    返回定义:
+    0: 成功
+    1: 用户不存在"""
+    for roomId, room in rooms.items():
+        if user_id in room.users:
+            return {"roomId": roomId}
+    return {"status": "1"}
+def change_host(roomId, host_id):
     """Change the host of the room.
     返回定义:
     0: 成功
     1: 房间不存在
     2: 新房主不存在"""
-    if room_id not in rooms:            # 房间不存在
+    if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
-    if host_id not in rooms[room_id].users: # 新房主不存在
+    if host_id not in rooms[roomId].users: # 新房主不存在
         return {"status": "2"}
-    rooms[room_id].host = host_id
+    rooms[roomId].host = host_id
     return {"status": "0"}
 
-def room_lock_state_change(room_id):
+def room_lock_state_change(roomId):
     """Lock the room.
     返回定义:
     0: 成功
     1: 房间不存在"""
-    if room_id not in rooms:            # 房间不存在
+    if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
     #如果原来这个房间被锁定
-    if rooms[room_id].locked:
-        rooms[room_id].locked = False
+    if rooms[roomId].locked:
+        rooms[roomId].locked = False
     else:
-        rooms[room_id].locked = True
+        rooms[roomId].locked = True
     return {"status": "0"}
 
-def set_state(room_id, state):
+def set_state(roomId, state):
     """Set the state of the room.
     返回定义:
     0: 成功
     1: 房间不存在"""
-    if room_id not in rooms:            # 房间不存在
+    if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
-    rooms[room_id].state = state
+    rooms[roomId].state = state
     return {"status": "0"}
 
-def set_cycle_mode(room_id, cycle):
+def set_cycle_mode(roomId, cycle):
     """Set the cycle mode of the room.
     返回定义:
     0: 成功
     1: 房间不存在"""
-    if room_id not in rooms:            # 房间不存在
+    if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
-    rooms[room_id].cycle = cycle
+    rooms[roomId].cycle = cycle
     return {"status": "0"}
 
-def set_chart(room_id, chart):
+def set_chart(roomId, chart):
     """Set the chart of the room.
     返回定义:
     0: 成功
     1: 房间不存在"""
-    if room_id not in rooms:            # 房间不存在
+    if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
-    rooms[room_id].chart = chart
+    rooms[roomId].chart = chart
     return {"status": "0"}
 
-def player_leave(room_id, user_id):
+def player_leave(roomId, user_id):
     """Remove a user from the room.
     返回定义:
     0: 成功
     1: 房间不存在
     2: 用户不存在"""
-    if room_id not in rooms:            # 房间不存在
+    if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
-    if user_id not in rooms[room_id].users: # 用户不存在
+    if user_id not in rooms[roomId].users: # 用户不存在
         return {"status": "2"}
     # 【修改】使用 del 从字典中删除用户
-    del rooms[room_id].users[user_id]
+    del rooms[roomId].users[user_id]
     return {"status": "0"}
 
-def monitor_leave(room_id, monitor_id):
+def monitor_leave(roomId, monitor_id):
     """Remove a monitor from the room.
     返回定义:
     0: 成功
     1: 房间不存在
     2: 监控不存在"""
-    if room_id not in rooms:            # 房间不存在
+    if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
-    if monitor_id not in rooms[room_id].monitors: # 监控不存在
+    if monitor_id not in rooms[roomId].monitors: # 监控不存在
         return {"status": "2"}
-    rooms[room_id].monitors.remove(monitor_id)
+    rooms[roomId].monitors.remove(monitor_id)
     return {"status": "0"}
 
 # 【修改】is_monitor 函数定义和逻辑
@@ -174,50 +195,50 @@ def is_monitor(user_id): # 只接受 user_id 参数
     else:
         return {"monitor": "1"} # 不是监控者
     
-def get_connections(room_id):
+def get_connections(roomId):
     """Get the connection of all users in the room.
     返回定义:
     0: 成功
     1: 房间不存在""" # 这里不需要用户不存在的状态，因为遍历时不存在就不会被添加
-    if room_id not in rooms:            # 房间不存在
+    if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
     connections = []
-    for user_id in rooms[room_id].users:
+    for user_id in rooms[roomId].users:
         # 【修改】从 RoomUser 实例中获取 connection
-        connections.append(rooms[room_id].users[user_id].connection)
+        connections.append(rooms[roomId].users[user_id].connection)
     return {"status": "0", "connections": connections}
-def get_room_state(room_id):
+def get_room_state(roomId):
     """Get the state of the room.
     返回定义:
     0: 成功
     1: 房间不存在"""
-    if room_id not in rooms:            # 房间不存在
+    if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
-    return {"status": "0", "state": rooms[room_id].state}
-def get_all_users(room_id):
+    return {"status": "0", "state": rooms[roomId].state}
+def get_all_users(roomId):
     """Get all users in the room.
     返回定义:
     0: 成功
     1: 房间不存在"""
-    if room_id not in rooms:            # 房间不存在
+    if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
-    return {"status": "0", "users": rooms[room_id].users}
-def get_all_monitors(room_id):
+    return {"status": "0", "users": rooms[roomId].users}
+def get_all_monitors(roomId):
     """Get all monitors in the room.
     返回定义:
     0: 成功
     1: 房间不存在"""
-    if room_id not in rooms:            # 房间不存在
+    if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
-    return {"status": "0", "monitors": rooms[room_id].monitors}
-def is_live(room_id):
+    return {"status": "0", "monitors": rooms[roomId].monitors}
+def is_live(roomId):
     """Check if the room is live.
     返回定义:
     0: 是直播
     1: 不是直播"""
-    if room_id not in rooms:            # 房间不存在
+    if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
-    return {"status": "0", "isLive": rooms[room_id].live}
+    return {"status": "0", "isLive": rooms[roomId].live}
 
 #---群体操作---
 #获取一个人所在的所有房间
@@ -227,9 +248,9 @@ def get_rooms_of_user(user_id):
     0: 成功"""
     #TODO:1:用户不存在
     rooms_of_user = []
-    for room_id in rooms:
-        if user_id in rooms[room_id].users:
-            rooms_of_user.append(room_id)
+    for roomId in rooms:
+        if user_id in rooms[roomId].users:
+            rooms_of_user.append(roomId)
     return {"status": "0", "rooms": rooms_of_user}
 
 def remove_user_from_all_rooms(user_id):
@@ -242,9 +263,9 @@ def remove_user_from_all_rooms(user_id):
     
     # 遍历所有房间的 ID
     # 使用 list(rooms.keys()) 是为了在遍历时避免字典结构被修改可能导致的问题，虽然这里不会发生
-    for room_id in list(rooms.keys()):
+    for roomId in list(rooms.keys()):
         # 调用 player_leave 尝试从当前房间移除用户
-        result = player_leave(room_id, user_id)
+        result = player_leave(roomId, user_id)
         
         # 如果 player_leave 返回状态 0 (成功移除)
         if result.get("status") == "0":

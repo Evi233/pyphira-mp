@@ -9,6 +9,7 @@ from room import *
 from server import Server
 from i10n import get_i10n_text
 import asyncio
+import random
 
 HOST = '0.0.0.0'
 PORT = 12346
@@ -42,14 +43,14 @@ class MainHandler(SimplePacketHandler):
             # 获取这个用户所在的所有房间
             rooms_of_user = get_rooms_of_user(self.user_info.id)
             if rooms_of_user["status"] == "0":
-                for room_id in rooms_of_user["rooms"]:
+                for roomId in rooms_of_user["rooms"]:
                     # 从房间里移除玩家
-                    player_leave(room_id, self.user_info.id)
+                    player_leave(roomId, self.user_info.id)
                     # 提醒这些房间里的所有其他玩家
                     packet = ClientBoundMessagePacket(
                         LeaveRoomMessage(self.user_info.id, self.user_info.name))
                     # 广播给房间里的其他人
-                    for _, room_user in rooms[room_id].users.items():
+                    for _, room_user in rooms[roomId].users.items():
                         if room_user.connection != self.connection:
                             room_user.connection.send(packet)
 
@@ -58,7 +59,7 @@ class MainHandler(SimplePacketHandler):
 
     def handleCreateRoom(self, packet: ServerBoundCreateRoomPacket) -> None:
         print("Create room with id", packet.roomId)
-        creat_room_result = create_room(packet.roomId)
+        creat_room_result = create_room(packet.roomId, self.user_info)
         if creat_room_result == {"status": "0"}:
             #错误处理
             if self.user_info == None:
@@ -132,7 +133,122 @@ class MainHandler(SimplePacketHandler):
                 #用户已存在
                 packet = ClientBoundJoinRoomPacket.Failed(get_i10n_text("zh-rCN", "user_already_exist"))
                 self.connection.send(packet)
+    #ServerBoundLeaveRoomPacket
 
+
+    def handleLeaveRoom(self, packet: ServerBoundLeaveRoomPacket) -> None:
+        room_id_query_result = get_roomId(self.user_info.id) # 获取用户所在的房间信息
+        roomId = room_id_query_result["roomId"] # 从结果字典中提取实际的房间ID字符串
+        print("Leave room with id", roomId)
+
+        # --------- 鉴权 ---------
+        if self.user_info is None:
+            self.connection.close()
+            return
+        # 检查用户是否真的在房间里
+        if room_id_query_result.get("status") == "1":
+            print(f"用户 [{self.user_info.id}] {self.user_info.name} 尝试离开房间但未在任何房间中找到。")
+            self.connection.send(ClientBoundLeaveRoomPacket.Failed(get_i10n_text("zh-rCN", "not_in_room")))
+            return
+        # --------- 真正离开房间 ---------
+        
+        print(f"User [{self.user_info.id}] {self.user_info.name} attempts to leave room {roomId}.")
+        leave_room_result = player_leave(roomId, self.user_info.id)
+        if leave_room_result.get("status") != "0":
+            # 失败反馈
+            error_message = ""
+            if leave_room_result == {"status": "1"}:
+                error_message = get_i10n_text("zh-rCN", "room_not_exist")
+            elif leave_room_result == {"status": "2"}:
+                error_message = get_i10n_text("zh-rCN", "user_not_exist")
+            else: # 备用错误消息
+                error_message = f"[Error leaving room: {leave_room_result}]"
+            self.connection.send(ClientBoundLeaveRoomPacket.Failed(error_message))
+            return
+
+        # --------- 给客户端发成功包 ---------
+        self.connection.send(ClientBoundLeaveRoomPacket.Success())
+
+        # --------- 只给这个房间广播离开消息 ---------
+        room = rooms.get(roomId)          # 房间可能已被销毁
+        if room is None:
+            return
+
+        leave_msg = ClientBoundMessagePacket(
+            LeaveRoomMessage(self.user_info.id, self.user_info.name)
+        )
+
+        # 广播给房间里的“其他”人
+        for other in room.users.values():
+            if other.connection is not self.connection:
+                other.connection.send(leave_msg)
+        
+        #获取该房间的所有用户
+        users = get_all_users(roomId)["users"]
+        #如果是房主
+        
+        if get_host(roomId)["host"] == self.user_info.id:
+            #如果是房主，随机一个不是monitor的人做新房主
+            #随机一个不是monitor的人
+            new_host = random.choice([user for user in users.values() if user.info.id != get_host(roomId)["host"]])
+            #设置新房主
+            change_host(roomId, new_host.info.id)
+            #通知其他用户
+            connections = get_connections(roomId)["connections"]
+            for connection in connections:
+                #如果当前要发送的消息是要发给自己
+                if connection == self.connection:
+                    #跳过发送
+                    continue
+                #否则发送给其他用户
+                #没有显式定义，但是可用
+                packet = ClientBoundHostChangePacket(new_host.info.id, new_host.info.name)
+                connection.send(packet)
+        
+
+
+
+
+
+
+
+    def handleSelectChart(self, packet: ServerBoundSelectChartPacket) -> None:
+        print("Select chart with id", packet.id)
+        #获取用户所在房间
+        roomId = get_roomId(self.user_info.id)
+        if roomId == None:
+            #用户不在房间
+            packet = ClientBoundSelectChartPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            self.connection.send(packet)
+            return
+        roomId = roomId["roomId"]
+        if self.user_info == None:
+            #未鉴权
+            #断开连接
+            self.connection.close()
+            return
+            #判断是不是房主
+        if get_host(roomId)["host"] != self.user_info.id:
+            #不是房主
+            packet = ClientBoundSelectChartPacket.Failed(get_i10n_text("zh-rCN", "not_host"))
+            self.connection.send(packet)
+            return
+        #是房主
+        #设置chart
+        set_chart(packet.roomId, packet.id)
+        #通知其他用户
+        connections = get_connections(packet.roomId)["connections"]
+        for connection in connections:
+            #如果当前要发送的消息是要发给自己
+            if connection == self.connection:
+                #跳过发送
+                continue
+            #否则发送给其他用户
+            packet = ClientBoundSelectChartPacket.Success(packet.id)
+            connection.send(packet)
+        #通知自己
+        packet = ClientBoundSelectChartPacket.Success(packet.id)
+        self.connection.send(packet)
 
 def handle_connection(connection: Connection):
     handler = MainHandler(connection)
