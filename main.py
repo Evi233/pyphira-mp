@@ -186,25 +186,21 @@ class MainHandler(SimplePacketHandler):
         #获取该房间的所有用户
         users = get_all_users(roomId)["users"]
         #如果是房主
-        
         if get_host(roomId)["host"] == self.user_info.id:
-            #如果是房主，随机一个不是monitor的人做新房主
-            #随机一个不是monitor的人
-            new_host = random.choice([user for user in users.values() if user.info.id != get_host(roomId)["host"]])
-            #设置新房主
-            change_host(roomId, new_host.info.id)
-            #通知其他用户
-            connections = get_connections(roomId)["connections"]
-            for connection in connections:
-                #如果当前要发送的消息是要发给自己
-                if connection == self.connection:
-                    #跳过发送
-                    continue
-                #否则发送给其他用户
-                #没有显式定义，但是可用
-                packet = ClientBoundHostChangePacket(new_host.info.id, new_host.info.name)
-                connection.send(packet)
-        
+            #如果房间就剩一个人了
+            if len(users) <= 1:
+                #销毁房间
+                destory_room(roomId)
+            else:
+                #如果是房主，随机一个不是monitor的人做新房主
+                #随机一个不是monitor的人
+                new_host = random.choice([user for user in users.values() if user.info.id != get_host(roomId)["host"]])
+                #设置新房主
+                change_host(roomId, new_host.info.id)
+                #给新房主发送ClientBoundHostChangePacket
+                new_host.connection.send(ClientBoundChangeHostPacket(True))
+                #TODO:把这玩意往前移，在移除这个用户之前处理完
+            
 
 
 

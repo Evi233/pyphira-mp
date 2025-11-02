@@ -45,6 +45,16 @@ def create_room(roomId, user_info):
     rooms[roomId].host = user_info.id
     return {"status": "0"}
 
+def destory_room(roomId):
+    """Destory the room with the given ID.
+    房间销毁返回定义:
+    0: 成功
+    1: 房间不存在"""
+    if roomId not in rooms:            # 房间不存在
+        return {"status": "1"}
+    del rooms[roomId]
+    return {"status": "0"}
+
 def add_user(roomId, user_info, connection):
     """Add a user to the room.
     返回定义:
