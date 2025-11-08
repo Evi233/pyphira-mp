@@ -20,6 +20,7 @@ class Room:
         self.users = {} # 这个字典现在会存储 RoomUser 实例
         self.monitors = []
         self.chart = None
+        self.ready = {} # 用于存储用户是否准备好的状态
 
 # 初始化监控列表
 # 【注意】这里有一个潜在的bug：monitors应该是一个列表，但目前每次循环都会覆盖它。
@@ -252,6 +253,34 @@ def is_live(roomId):
         return {"status": "1"}
     return {"status": "0", "isLive": rooms[roomId].live}
 
+def set_ready(roomId, user_id):
+    """Set a user as ready in the room.
+    返回定义:
+    0: 成功
+    1: 房间不存在
+    2: 用户不存在"""
+    if roomId not in rooms:            # 房间不存在
+        return {"status": "1"}
+    if user_id not in rooms[roomId].users: # 用户不存在
+        return {"status": "2"}
+    #设置用户为准备好
+    #这里把用户的id放进ready字典
+    rooms[roomId].ready[user_id] = True
+    return {"status": "0"}
+def cancel_ready(roomId, user_id):
+    """Cancel a user's ready status in the room.
+    返回定义:
+    0: 成功
+    1: 房间不存在
+    2: 用户不存在"""
+    if roomId not in rooms:            # 房间不存在
+        return {"status": "1"}
+    if user_id not in rooms[roomId].users: # 用户不存在
+        return {"status": "2"}
+    #取消用户的ready状态
+    #这里把用户的id从ready字典中移除
+    del rooms[roomId].ready[user_id]
+    return {"status": "0"}
 #---群体操作---
 #获取一个人所在的所有房间
 def get_rooms_of_user(user_id):

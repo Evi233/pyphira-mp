@@ -288,6 +288,8 @@ class MainHandler(SimplePacketHandler):
             return
         #切换状态WaitForReady
         set_state(roomId, WaitForReady())
+        #把房主的state设置为ready
+        set_ready(roomId, self.user_info.id)
         #广播ClientBoundRequestStartPacket
         connections = get_connections(roomId)["connections"]
         for connection in connections:
@@ -297,7 +299,37 @@ class MainHandler(SimplePacketHandler):
         packet_notify = ClientBoundRequestStartPacket.Success()
         print(packet_notify)
         self.connection.send(packet_notify)
-        
+    
+    def handleCancelReady(self, packet: ServerBoundCancelReadyPacket) -> None:
+        '''
+        取消准备
+        ！注意！房主取消开始也发这个
+        '''
+        roomId = get_roomId(self.user_info.id)
+        print("Cancel ready at room", roomId, "by user", self.user_info.id)
+        if roomId == None:
+            # 用户不在房间
+            packet_not_in_room = ClientBoundCancelReadyPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            self.connection.send(packet_not_in_room)
+            return
+        roomId = roomId["roomId"]  # ✅ 提取字符串
+        #是否房主
+        if get_host(roomId)["host"] == self.user_info.id:
+            #是房主
+            #切换状态为SelectChart
+            set_state(roomId, SelectChart(chartId=rooms[roomId].chart))
+            #广播ClientBoundChangeStatePacket
+            connections = get_connections(roomId)["connections"]
+            for connection in connections:
+                packet_state_change = ClientBoundChangeStatePacket(SelectChart())
+                connection.send(packet_state_change)
+            #给自己发送通知
+            packet_notify = ClientBoundCancelReadyPacket.Success()
+            #取消房主的ready状态
+            cancel_ready(roomId, self.user_info.id)
+            self.connection.send(packet_notify)
+            return
+
         
         
 def handle_connection(connection: Connection):
