@@ -265,7 +265,39 @@ class MainHandler(SimplePacketHandler):
         self.connection.send(packet_success)
 #        packet = ClientBoundChangeStatePacket(SelectChart(chartId=packet.id))
 #        connection.send(packet)
-
+    def handleGameStart(self, packet: ServerBoundRequestStartPacket) -> None:
+        roomId = get_roomId(self.user_info.id)
+        print("Game start at room", roomId, "by user", self.user_info.id)
+        #检查在不在房间里
+        if roomId == None:
+            #用户不在房间
+            packet_not_in_room = ClientBoundRequestStartPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            self.connection.send(packet_not_in_room)
+            return
+        #检查是否在SelectChart状态
+        if not isinstance(rooms[roomId].state, SelectChart):
+            packet_not_select_chart = ClientBoundRequestStartPacket.Failed(get_i10n_text("zh-rCN", "not_select_chart"))
+            self.connection.send(packet_not_select_chart)
+            return
+        #验证房主身份
+        elif get_host(roomId)["host"] != self.user_info.id:
+            #不是房主
+            packet_not_host = ClientBoundRequestStartPacket.Failed(get_i10n_text("zh-rCN", "not_host"))
+            self.connection.send(packet_not_host)
+            return
+        #切换状态WaitForReady
+        set_state(roomId, WaitForReady())
+        #广播ClientBoundRequestStartPacket
+        connections = get_connections(roomId)["connections"]
+        for connection in connections:
+            packet_state_change = ClientBoundChangeStatePacket(WaitForReady())
+            connection.send(packet_state_change)
+        #给自己发送通知
+        packet_notify = ClientBoundRequestStartPacket.Success()
+        self.connection.send(packet_notify)
+        
+        
+        
 def handle_connection(connection: Connection):
     handler = MainHandler(connection)
 

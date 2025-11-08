@@ -165,6 +165,8 @@ def set_chart(roomId, chart):
     if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
     rooms[roomId].chart = chart
+    #改变状态为SelectChart
+    set_state(roomId, SelectChart(chartId=chart))
     return {"status": "0"}
 
 def player_leave(roomId, user_id):

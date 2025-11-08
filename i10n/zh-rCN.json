@@ -1,20 +1,9 @@
 {
-
-    "room_create_success": "房间创建成功",
-    "room_already_exist": "房间已存在",
-    "user_already_exist": "用户已存在",
+    "room_already_exist": "房间已经存在",
     "room_not_exist": "房间不存在",
-    "join_room_success": "加入房间成功",
-    "join_room_failure": "加入房间失败",
-    "user_not_exist": "用户不存在",
-    "monitor_add_success": "监控添加成功",
-    "monitor_already_exist": "监控已存在",
-    "monitor_not_exist": "监控不存在",
-    "monitor_remove_success": "监控移除成功",
-    "monitor_remove_failure": "监控移除失败",
-    "monitor_cycle_success": "监控循环成功",
-    "monitor_cycle_failure": "监控循环失败",
-    "monitor_cycle_not_exist": "监控循环不存在",
-    "not_host": "您不是房主"
-
+    "user_already_exist": "用户已在房间中",
+    "user_not_exist": "用户不在房间中",
+    "not_in_room": "您不在任何房间中",
+    "not_host": "您不是房主，无法执行此操作",
+    "not_select_chart": "当前不是选择谱面的状态"
 }
