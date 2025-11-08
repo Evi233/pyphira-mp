@@ -45,8 +45,8 @@ def create_room(roomId, user_info):
     rooms[roomId].host = user_info.id
     return {"status": "0"}
 
-def destory_room(roomId):
-    """Destory the room with the given ID.
+def destroy_room(roomId):
+    """Destroy the room with the given ID.
     房间销毁返回定义:
     0: 成功
     1: 房间不存在"""

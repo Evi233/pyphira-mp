@@ -135,33 +135,56 @@ class MainHandler(SimplePacketHandler):
                 self.connection.send(packet)
     #ServerBoundLeaveRoomPacket
 
-
     def handleLeaveRoom(self, packet: ServerBoundLeaveRoomPacket) -> None:
-        room_id_query_result = get_roomId(self.user_info.id) # 获取用户所在的房间信息
-        roomId = room_id_query_result["roomId"] # 从结果字典中提取实际的房间ID字符串
+        room_id_query_result = get_roomId(self.user_info.id)
+        roomId = room_id_query_result["roomId"]
         print("Leave room with id", roomId)
 
         # --------- 鉴权 ---------
         if self.user_info is None:
             self.connection.close()
             return
-        # 检查用户是否真的在房间里
+        
         if room_id_query_result.get("status") == "1":
             print(f"用户 [{self.user_info.id}] {self.user_info.name} 尝试离开房间但未在任何房间中找到。")
             self.connection.send(ClientBoundLeaveRoomPacket.Failed(get_i10n_text("zh-rCN", "not_in_room")))
             return
-        # --------- 真正离开房间 ---------
-        
+
+        # ========== 【核心修复】在踢人之前完成所有决策 ==========
         print(f"User [{self.user_info.id}] {self.user_info.name} attempts to leave room {roomId}.")
+        
+        # 提前获取房主ID，避免重复查询
+        current_host_id = get_host(roomId)["host"]
+        is_host = (current_host_id == self.user_info.id)
+        
+        # 获取移除前的用户快照（字典格式：{user_id: user_obj}）
+        users_before_leave = get_all_users(roomId)["users"]
+        remaining_user_count = len(users_before_leave) - 1  # 踢人后的真实剩余人数
+        
+        # 记录要干啥，但先不干
+        should_destroy_room = False
+        new_host_id = None
+        
+        if is_host:
+            if remaining_user_count <= 0:
+                should_destroy_room = True  # 最后一人，踢完就销毁
+            else:
+                # 从踢人前的列表里排除自己，随机选新房主
+                # 注意：你代码里写的是踢monitor，实际判断的是踢自己，我按代码原逻辑保留
+                other_ids = [uid for uid in users_before_leave.keys() if uid != self.user_info.id]
+                if other_ids:  # 防御性检查
+                    new_host_id = random.choice(other_ids)
+        # ========================================================
+        
+        # --------- 真正离开房间（现在才踢）---------
         leave_room_result = player_leave(roomId, self.user_info.id)
         if leave_room_result.get("status") != "0":
-            # 失败反馈
             error_message = ""
             if leave_room_result == {"status": "1"}:
                 error_message = get_i10n_text("zh-rCN", "room_not_exist")
             elif leave_room_result == {"status": "2"}:
                 error_message = get_i10n_text("zh-rCN", "user_not_exist")
-            else: # 备用错误消息
+            else:
                 error_message = f"[Error leaving room: {leave_room_result}]"
             self.connection.send(ClientBoundLeaveRoomPacket.Failed(error_message))
             return
@@ -169,39 +192,29 @@ class MainHandler(SimplePacketHandler):
         # --------- 给客户端发成功包 ---------
         self.connection.send(ClientBoundLeaveRoomPacket.Success())
 
-        # --------- 只给这个房间广播离开消息 ---------
-        room = rooms.get(roomId)          # 房间可能已被销毁
+        # --------- 广播离开消息 ---------
+        room = rooms.get(roomId)
         if room is None:
             return
 
         leave_msg = ClientBoundMessagePacket(
             LeaveRoomMessage(self.user_info.id, self.user_info.name)
         )
-
-        # 广播给房间里的“其他”人
+        
         for other in room.users.values():
             if other.connection is not self.connection:
                 other.connection.send(leave_msg)
-        
-        #获取该房间的所有用户
-        users = get_all_users(roomId)["users"]
-        #如果是房主
-        if get_host(roomId)["host"] == self.user_info.id:
-            #如果房间就剩一个人了
-            if len(users) <= 1:
-                #销毁房间
-                destory_room(roomId)
-            else:
-                #如果是房主，随机一个不是monitor的人做新房主
-                #随机一个不是monitor的人
-                new_host = random.choice([user for user in users.values() if user.info.id != get_host(roomId)["host"]])
-                #设置新房主
-                change_host(roomId, new_host.info.id)
-                #给新房主发送ClientBoundHostChangePacket
-                new_host.connection.send(ClientBoundChangeHostPacket(True))
-                #TODO:把这玩意往前移，在移除这个用户之前处理完
-            
 
+        # --------- 执行之前记录的决策 ---------
+        if should_destroy_room:
+            print(f"Room {roomId} is empty, destroying...")
+            destroy_room(roomId)
+        elif new_host_id:
+            print(f"Room {roomId} has new host {new_host_id}")
+            change_host(roomId, new_host_id)
+            # 确保新房主还在房间里（防御性编程）
+            if new_host_id in room.users:
+                room.users[new_host_id].connection.send(ClientBoundChangeHostPacket(True))
 
 
 
