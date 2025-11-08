@@ -5,6 +5,7 @@ from rymc.phira.protocol.data.message import *
 from rymc.phira.protocol.handler import SimplePacketHandler
 from rymc.phira.protocol.packet.clientbound import *
 from rymc.phira.protocol.packet.serverbound import *
+from rymc.phira.protocol.data.state import *
 from room import *
 from server import Server
 from i10n import get_i10n_text
@@ -227,8 +228,8 @@ class MainHandler(SimplePacketHandler):
         roomId = get_roomId(self.user_info.id)
         if roomId == None:
             #用户不在房间
-            packet = ClientBoundSelectChartPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
-            self.connection.send(packet)
+            packet_not_in_room = ClientBoundSelectChartPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            self.connection.send(packet_not_in_room)
             return
         roomId = roomId["roomId"]
         if self.user_info == None:
@@ -239,25 +240,31 @@ class MainHandler(SimplePacketHandler):
             #判断是不是房主
         if get_host(roomId)["host"] != self.user_info.id:
             #不是房主
-            packet = ClientBoundSelectChartPacket.Failed(get_i10n_text("zh-rCN", "not_host"))
-            self.connection.send(packet)
+            packet_not_host = ClientBoundSelectChartPacket.Failed(get_i10n_text("zh-rCN", "not_host"))
+            self.connection.send(packet_not_host)
             return
         #是房主
         #设置chart
-        set_chart(packet.roomId, packet.id)
+        set_chart(roomId, packet.id)
         #通知其他用户
-        connections = get_connections(packet.roomId)["connections"]
+        connections = get_connections(roomId)["connections"]
         for connection in connections:
             #如果当前要发送的消息是要发给自己
-            if connection == self.connection:
+            #if connection == self.connection:
                 #跳过发送
-                continue
-            #否则发送给其他用户
-            packet = ClientBoundSelectChartPacket.Success(packet.id)
-            connection.send(packet)
+            #    continue
+            #状态改变
+            packet_state_change = ClientBoundChangeStatePacket(SelectChart(chartId=packet.id))
+            connection.send(packet_state_change)
+            #发送醒目提示
+            packet_chat = ClientBoundMessagePacket(SelectChartMessage(self.user_info.id,self.user_info.name,packet.id))
+            connection.send(packet_chat)
+
         #通知自己
-        packet = ClientBoundSelectChartPacket.Success(packet.id)
-        self.connection.send(packet)
+        packet_success = ClientBoundSelectChartPacket.Success()
+        self.connection.send(packet_success)
+#        packet = ClientBoundChangeStatePacket(SelectChart(chartId=packet.id))
+#        connection.send(packet)
 
 def handle_connection(connection: Connection):
     handler = MainHandler(connection)
