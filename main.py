@@ -305,6 +305,8 @@ class MainHandler(SimplePacketHandler):
         取消准备
         ！注意！房主取消开始也发这个
         '''
+        #TODO：普通成员玩家的取消准备和房主取消开始的区别
+        #TODO：还有房主取消准备的时候需要取消所有玩家准备
         roomId = get_roomId(self.user_info.id)
         print("Cancel ready at room", roomId, "by user", self.user_info.id)
         if roomId == None:
