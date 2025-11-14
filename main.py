@@ -301,36 +301,108 @@ class MainHandler(SimplePacketHandler):
         self.connection.send(packet_notify)
     
     def handleCancelReady(self, packet: ServerBoundCancelReadyPacket) -> None:
-        '''
-        取消准备
-        ！注意！房主取消开始也发这个
-        '''
-        #TODO：普通成员玩家的取消准备和房主取消开始的区别
-        #TODO：还有房主取消准备的时候需要取消所有玩家准备
-        roomId = get_roomId(self.user_info.id)
-        print("Cancel ready at room", roomId, "by user", self.user_info.id)
-        if roomId == None:
-            # 用户不在房间
+        """Handle player cancel ready request."""
+        room_id_query_result = get_roomId(self.user_info.id)
+        if room_id_query_result.get("status") == "1":
+            # User not in any room
             packet_not_in_room = ClientBoundCancelReadyPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
             self.connection.send(packet_not_in_room)
             return
-        roomId = roomId["roomId"]  # ✅ 提取字符串
-        #是否房主
-        if get_host(roomId)["host"] == self.user_info.id:
-            #是房主
-            #切换状态为SelectChart
+        
+        roomId = room_id_query_result["roomId"]
+        print("Cancel ready at room", roomId, "by user", self.user_info.id)
+        
+        # Check if room is in WaitForReady state
+        if not isinstance(rooms[roomId].state, WaitForReady):
+            packet_not_ready_state = ClientBoundCancelReadyPacket.Failed(get_i10n_text("zh-rCN", "not_ready_state"))
+            self.connection.send(packet_not_ready_state)
+            return
+        
+        # Check if user is the host
+        is_host = get_host(roomId)["host"] == self.user_info.id
+        
+        if is_host:
+            # Host canceling: change room state back to SelectChart and cancel all ready states
             set_state(roomId, SelectChart(chartId=rooms[roomId].chart))
-            #广播ClientBoundChangeStatePacket
+            
+            # Cancel all ready states
+            rooms[roomId].ready.clear()
+            
+            # Broadcast state change to all room members
             connections = get_connections(roomId)["connections"]
             for connection in connections:
-                packet_state_change = ClientBoundChangeStatePacket(SelectChart())
+                packet_state_change = ClientBoundChangeStatePacket(SelectChart(chartId=rooms[roomId].chart))
                 connection.send(packet_state_change)
-            #给自己发送通知
-            packet_notify = ClientBoundCancelReadyPacket.Success()
-            #取消房主的ready状态
-            cancel_ready(roomId, self.user_info.id)
-            self.connection.send(packet_notify)
+            
+            # Send success response
+            self.connection.send(ClientBoundCancelReadyPacket.Success())
+        else:
+            # Regular player canceling: just cancel their own ready state
+            cancel_ready_result = cancel_ready(roomId, self.user_info.id)
+            if cancel_ready_result.get("status") != "0":
+                error_message = ""
+                if cancel_ready_result == {"status": "1"}:
+                    error_message = get_i10n_text("zh-rCN", "room_not_exist")
+                elif cancel_ready_result == {"status": "2"}:
+                    error_message = get_i10n_text("zh-rCN", "user_not_exist")
+                else:
+                    error_message = f"[Error canceling ready: {cancel_ready_result}]"
+                self.connection.send(ClientBoundCancelReadyPacket.Failed(error_message))
+                return
+            
+            # Send success response
+            self.connection.send(ClientBoundCancelReadyPacket.Success())
+            
+            # Broadcast cancel ready message to room members
+            connections = get_connections(roomId)["connections"]
+            for connection in connections:
+                packet_cancel_ready_msg = ClientBoundMessagePacket(
+                    CancelReadyMessage(self.user_info.id)
+                )
+                connection.send(packet_cancel_ready_msg)
+
+    def handleReady(self, packet: ServerBoundReadyPacket) -> None:
+        """Handle player ready request."""
+        room_id_query_result = get_roomId(self.user_info.id)
+        if room_id_query_result.get("status") == "1":
+            # User not in any room
+            packet_not_in_room = ClientBoundReadyPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            self.connection.send(packet_not_in_room)
             return
+        
+        roomId = room_id_query_result["roomId"]
+        print("Ready at room", roomId, "by user", self.user_info.id)
+        
+        # Check if room is in WaitForReady state
+        if not isinstance(rooms[roomId].state, WaitForReady):
+            packet_not_ready_state = ClientBoundReadyPacket.Failed(get_i10n_text("zh-rCN", "not_ready_state"))
+            self.connection.send(packet_not_ready_state)
+            return
+        
+        # Set user as ready
+        set_ready_result = set_ready(roomId, self.user_info.id)
+        if set_ready_result.get("status") != "0":
+            error_message = ""
+            if set_ready_result == {"status": "1"}:
+                error_message = get_i10n_text("zh-rCN", "room_not_exist")
+            elif set_ready_result == {"status": "2"}:
+                error_message = get_i10n_text("zh-rCN", "user_not_exist")
+            else:
+                error_message = f"[Error setting ready: {set_ready_result}]"
+            self.connection.send(ClientBoundReadyPacket.Failed(error_message))
+            return
+        
+        # Send success response to the user
+        self.connection.send(ClientBoundReadyPacket.Success())
+        
+        # Broadcast ready state change to room members
+        connections = get_connections(roomId)["connections"]
+        for connection in connections:
+            # Send ready message to all users
+            packet_ready_msg = ClientBoundMessagePacket(
+                ReadyMessage(self.user_info.id)
+            )
+            connection.send(packet_ready_msg)
 
         
         
