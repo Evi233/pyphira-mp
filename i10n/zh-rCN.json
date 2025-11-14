@@ -1,9 +1,11 @@
 {
-    "room_already_exist": "房间已经存在",
-    "room_not_exist": "房间不存在",
-    "user_already_exist": "用户已在房间中",
-    "user_not_exist": "用户不在房间中",
-    "not_in_room": "您不在任何房间中",
-    "not_host": "您不是房主，无法执行此操作",
-    "not_select_chart": "当前不是选择谱面的状态"
+"room_already_exist": "房间已经存在",
+"room_not_exist": "房间不存在",
+"user_already_exist": "用户已在房间中",
+"user_not_exist": "用户不在房间中",
+"not_in_room": "您不在任何房间中",
+"not_host": "您不是房主，无法执行此操作",
+"not_select_chart": "当前不是选择谱面的状态",
+"room_in_ready_state": "房间正在准备中，无法加入",
+"not_ready_state": "不在准备状态"
 }

@@ -43,4 +43,4 @@ class PhiraFetcher:
                 headers={"Authorization": f"Bearer {token}"}
             )
         response_text = cls.fetch(request_func)
-        return UserInfo.parse_raw(response_text)
+        return UserInfo.model_validate_json(response_text)

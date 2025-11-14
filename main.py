@@ -83,7 +83,7 @@ class MainHandler(SimplePacketHandler):
         # 【修改】is_monitor 只接受一个 user_id 参数
         monitor_result = is_monitor(self.user_info.id)
         if monitor_result == {"monitor": "0"}: # {"monitor": "0"} 表示是监控者
-            # todo：monitor加入处理
+            # TODO：monitor加入处理
             # 这里可以调用 add_monitor 函数来将监控者加入房间
             # add_monitor(packet.roomId, self.user_info.id)
             # 然后发送 ClientBoundJoinRoomPacket.Success()
@@ -95,6 +95,15 @@ class MainHandler(SimplePacketHandler):
                 #断开连接
                 self.connection.close()
                 return
+            
+            # Check if room exists and is in WaitForReady state
+            if packet.roomId in rooms:
+                if isinstance(rooms[packet.roomId].state, WaitForReady):
+                    # Room is in ready state, cannot join
+                    packet_room_in_ready = ClientBoundJoinRoomPacket.Failed(get_i10n_text("zh-rCN", "room_in_ready_state"))
+                    self.connection.send(packet_room_in_ready)
+                    return
+            
             # 【修改】确保传递了 self.connection 参数
             join_room_result = add_user(packet.roomId, self.user_info, self.connection)
             if join_room_result == {"status": "0"}:
@@ -403,6 +412,30 @@ class MainHandler(SimplePacketHandler):
                 ReadyMessage(self.user_info.id)
             )
             connection.send(packet_ready_msg)
+        
+        # Check if all players are ready
+        room = rooms[roomId]
+        all_users = list(room.users.keys())
+        ready_users = list(room.ready.keys())
+        
+        # Check if everyone is ready (including host)
+        if len(all_users) == len(ready_users) and len(all_users) > 0:
+            print(f"All players ready in room {roomId}, starting game...")
+            
+            # Send StartPlayingMessage to all room members
+            for connection in connections:
+                packet_start_msg = ClientBoundMessagePacket(
+                    StartPlayingMessage()
+                )
+                connection.send(packet_start_msg)
+            
+            # Change room state to Playing
+            set_state(roomId, Playing())
+            
+            # Broadcast state change to all room members
+            for connection in connections:
+                packet_state_change = ClientBoundChangeStatePacket(Playing())
+                connection.send(packet_state_change)
 
         
         
