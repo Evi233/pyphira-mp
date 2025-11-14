@@ -23,6 +23,43 @@ class UserInfo(BaseModel):
     followingCount: Optional[int] = 0
     email: Optional[str] = None
 
+class ChartInfo(BaseModel):
+    """谱面信息模型"""
+    id: int
+    name: str
+    level: str
+    difficulty: float
+    charter: str
+    composer: str
+    illustrator: str
+    description: str
+    ranked: bool
+    reviewed: bool
+    stable: bool
+    stableRequest: bool
+    illustration: str
+    preview: str
+    file: str
+    uploader: int
+    tags: list[str]
+    rating: float
+    ratingCount: int
+    created: datetime
+    updated: datetime
+    chartUpdated: datetime
+
+class RecordResult(BaseModel):
+    """玩家游玩判定结果"""
+    score: int
+    perfect: int
+    good: int
+    bad: int
+    miss: int
+    max_combo: int
+    accuracy: float
+    full_combo: bool
+    std: float
+    std_score: float
 
 class PhiraFetcher:
     host: str = "https://phira.5wyxi.com/"
@@ -44,3 +81,42 @@ class PhiraFetcher:
             )
         response_text = cls.fetch(request_func)
         return UserInfo.model_validate_json(response_text)
+    @classmethod
+    def get_chart_info(cls, chartid: int) -> ChartInfo:
+        """
+        获取谱面信息（无需认证）
+        
+        Args:
+            chartid: 谱面ID
+            
+        Returns:
+            ChartInfo: 谱面信息对象
+            
+        Raises:
+            IOError: 当HTTP请求失败时抛出
+        """
+        def request_func():
+            return requests.get(f"{cls.host}chart/{chartid}")
+        
+        response_text = cls.fetch(request_func)
+        return ChartInfo.model_validate_json(response_text)
+        
+    @classmethod
+    def get_record_result(cls, recordid: int) -> RecordResult:
+        """
+        获取游玩判定结果（无需认证）
+        
+        Args:
+            recordid: 记录ID
+            
+        Returns:
+            RecordResult: 判定结果对象
+            
+        Raises:
+            IOError: 当HTTP请求失败时抛出
+        """
+        def request_func():
+            return requests.get(f"{cls.host}record/{recordid}")
+        
+        response_text = cls.fetch(request_func)
+        return RecordResult.model_validate_json(response_text)

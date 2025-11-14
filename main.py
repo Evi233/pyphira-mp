@@ -131,6 +131,8 @@ class MainHandler(SimplePacketHandler):
                     #所以todo
                     packet = ClientBoundOnJoinRoomPacket(UserProfile(self.user_info.id, self.user_info.name), False)
                     connection.send(packet)
+                    packet_message = ClientBoundMessagePacket(JoinRoomMessage(self.user_info.id, self.user_info.name))
+                    connection.send(packet_message)
                 #通知自己
                 #4 required positional arguments: 'gameState', 'users', 'monitors', and 'isLive'
                 packet = ClientBoundJoinRoomPacket.Success(gameState=room_state, users=user_profiles, monitors=monitors, isLive=islive)
@@ -160,7 +162,7 @@ class MainHandler(SimplePacketHandler):
             self.connection.send(ClientBoundLeaveRoomPacket.Failed(get_i10n_text("zh-rCN", "not_in_room")))
             return
 
-        # ========== 【核心修复】在踢人之前完成所有决策 ==========
+        # ========== 在踢人之前完成所有决策 ==========
         print(f"User [{self.user_info.id}] {self.user_info.name} attempts to leave room {roomId}.")
         
         # 提前获取房主ID，避免重复查询
@@ -256,6 +258,7 @@ class MainHandler(SimplePacketHandler):
         #设置chart
         set_chart(roomId, packet.id)
         #通知其他用户
+        chart_info = PhiraFetcher.get_chart_info(packet.id)
         connections = get_connections(roomId)["connections"]
         for connection in connections:
             #如果当前要发送的消息是要发给自己
@@ -266,7 +269,8 @@ class MainHandler(SimplePacketHandler):
             packet_state_change = ClientBoundChangeStatePacket(SelectChart(chartId=packet.id))
             connection.send(packet_state_change)
             #发送醒目提示
-            packet_chat = ClientBoundMessagePacket(SelectChartMessage(self.user_info.id,self.user_info.name,packet.id))
+            #中间的name是铺面name……
+            packet_chat = ClientBoundMessagePacket(SelectChartMessage(self.user_info.id,chart_info.name,packet.id))
             connection.send(packet_chat)
 
         #通知自己
@@ -309,6 +313,50 @@ class MainHandler(SimplePacketHandler):
         print(packet_notify)
         self.connection.send(packet_notify)
     
+    def handlePlayed(self, packet: ServerBoundPlayedPacket) -> None:
+        """Handle played packet with score submission."""
+        room_id_query_result = get_roomId(self.user_info.id)
+        if room_id_query_result.get("status") == "1":
+            # User not in any room
+            packet_not_in_room = ClientBoundPlayedPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            self.connection.send(packet_not_in_room)
+            return
+        
+        roomId = room_id_query_result["roomId"]
+        print(f"Played submission from user {self.user_info.id} in room {roomId}, record ID: {packet.id}")
+        
+        # Check if room is in Playing state
+        if not isinstance(rooms[roomId].state, Playing):
+            packet_not_playing_state = ClientBoundPlayedPacket.Failed("Not in playing state")
+            self.connection.send(packet_not_playing_state)
+            return
+        
+        try:
+            # Fetch record result from Phira API
+            result_info = FETCHER.get_record_result(packet.id)
+            
+            # Send success response to the submitting player
+            self.connection.send(ClientBoundPlayedPacket.Success())
+            
+            # Broadcast PlayedMessage to all room members (including self)
+            connections = get_connections(roomId)["connections"]
+            for connection in connections:
+                packet_played_msg = ClientBoundMessagePacket(
+                    PlayedMessage(
+                        user=self.user_info.id,
+                        score=result_info.score,
+                        accuracy=result_info.accuracy,
+                        fullCombo=result_info.full_combo
+                    )
+                )
+                connection.send(packet_played_msg)
+                
+        except Exception as e:
+            print(f"Error processing played packet: {e}")
+            packet_error = ClientBoundPlayedPacket.Failed(f"Failed to fetch record: {str(e)}")
+            self.connection.send(packet_error)
+
+
     def handleCancelReady(self, packet: ServerBoundCancelReadyPacket) -> None:
         """Handle player cancel ready request."""
         room_id_query_result = get_roomId(self.user_info.id)
