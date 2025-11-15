@@ -11,11 +11,14 @@ from i10n import get_i10n_text
 import asyncio
 import random
 import config
+from typing import Optional, Any  # 添加 Any
+from cachetools import TTLCache
 
 HOST = config.get_host("host", "0.0.0.0")
 PORT = config.get_port("port", 12346)
 FETCHER = PhiraFetcher()
-
+# 初始化TTL缓存: 最大1000个token，每个存活5分钟
+auth_cache = TTLCache(maxsize=1000, ttl=300)
 online_user_list = []
 class MainHandler(SimplePacketHandler):
     def handleAuthenticate(self, packet: ServerBoundAuthenticatePacket) -> None:
@@ -40,7 +43,7 @@ class MainHandler(SimplePacketHandler):
         self.connection.send(packet)
         packet = ClientBoundMessagePacket(ChatMessage(-1, "你正在一个 pyphira-mp 实例上游玩"))
         self.connection.send(packet)
-        packet = ClientBoundMessagePacket(ChatMessage(-1, "协议实现 by lRENyaaa | 网络逻辑 by Evi23"))
+        packet = ClientBoundMessagePacket(ChatMessage(-1, "协议实现 by lRENyaaa | 网络逻辑 by Evi233"))
         self.connection.send(packet)
     def _get_cached_user_info(self, token: str) -> Optional[any]:
         """带缓存的获取用户信息"""
