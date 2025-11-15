@@ -5,7 +5,6 @@ from rymc.phira.protocol.data.message import *
 from rymc.phira.protocol.handler import SimplePacketHandler
 from rymc.phira.protocol.packet.clientbound import *
 from rymc.phira.protocol.packet.serverbound import *
-from rymc.phira.protocol.data.state import *
 from room import *
 from server import Server
 from i10n import get_i10n_text
@@ -17,10 +16,20 @@ HOST = config.get_host("host", "0.0.0.0")
 PORT = config.get_port("port", 12346)
 FETCHER = PhiraFetcher()
 
+online_user_list = []
 class MainHandler(SimplePacketHandler):
     def handleAuthenticate(self, packet: ServerBoundAuthenticatePacket) -> None:
         print("Authenticate with token", packet.token)
         user_info = FETCHER.get_user_info(packet.token)
+
+        if user_info.id in online_user_list:
+            packet = ClientBoundAuthenticatePacket.Failed(get_i10n_text(user_info.language, "user_duplicate_join"))
+            self.connection.send(packet)
+            self.connection.close()
+            return
+
+        online_user_list.append(user_info.id)
+
         self.user_info = user_info
         self.user_lang = user_info.language
 
@@ -41,6 +50,7 @@ class MainHandler(SimplePacketHandler):
         # 检查这个玩家是否已经鉴权（登录），并且有 user_info 信息
         if hasattr(self, 'user_info') and self.user_info:
             print(f"用户 [{self.user_info.id}] {self.user_info.name} 下线。")
+            online_user_list.remove(self.user_info.id)
             # 获取这个用户所在的所有房间
             rooms_of_user = get_rooms_of_user(self.user_info.id)
             if rooms_of_user["status"] == "0":

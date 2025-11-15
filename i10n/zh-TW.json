@@ -11,5 +11,6 @@
   "room_already_locked": "房間已經鎖定",
   "room_already_unlocked": "房間已經解鎖",
   "room_already_cycled": "房間已在循環模式",
-  "room_already_not_cycled": "房間已不在循環模式"
+  "room_already_not_cycled": "房間已不在循環模式",
+  "user_duplicate_join": "你不能重複加入伺服器"
 }

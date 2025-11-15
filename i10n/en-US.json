@@ -11,5 +11,6 @@
   "room_already_locked": "Room is already locked",
   "room_already_unlocked": "Room is already unlocked",
   "room_already_cycled": "Room is already in cycle mode",
-  "room_already_not_cycled": "Room is no longer in cycle mode"
+  "room_already_not_cycled": "Room is no longer in cycle mode",
+  "user_duplicate_join": "You cannot join the server multiple times"
 }

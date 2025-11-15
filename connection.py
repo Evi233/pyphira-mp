@@ -33,16 +33,19 @@ class Connection:
         self.receiver(PacketRegistry.decode(ByteBuf(data)))
 
     def close(self):
+        asyncio.create_task(self.close_and_wait())
+
+    async def close_and_wait(self, writer_timeout=2):
+        if self.writer:
+            await asyncio.wait_for(self.writer.drain(), writer_timeout)
+
         self.writer.close()
-        asyncio.create_task(self._wait_closed())
+        await self.writer.wait_closed()
         if self.closeHandler:
             try:
                 self.closeHandler()          # 不需要任何参数
             except Exception as e:
                 print('[Connection] closeHandler 异常:', e)
-
-    async def _wait_closed(self):
-        await self.writer.wait_closed()
 
     def on_close(self, close_handler):
         self.closeHandler = close_handler
