@@ -34,14 +34,14 @@ class _ClientBoundLockRoomPacketFailed(ClientBoundLockRoomPacket):
         PacketWriter.write(buf, self.reason)
 
 
-class _ClientBoundLockRoomPacketOK(ClientBoundLockRoomPacket):
+class _ClientBoundLockRoomPacketSuccess(ClientBoundLockRoomPacket):
     def encode(self, buf) -> None:
         PacketWriter.write(buf, PacketResult.SUCCESS)
 
 
 # Bind variants
 ClientBoundLockRoomPacket.Failed = _ClientBoundLockRoomPacketFailed  # type: ignore[attr-defined]
-ClientBoundLockRoomPacket.OK = _ClientBoundLockRoomPacketOK  # type: ignore[attr-defined]
+ClientBoundLockRoomPacket.Success = _ClientBoundLockRoomPacketSuccess  # type: ignore[attr-defined]
 
 
 __all__ = ["ClientBoundLockRoomPacket"]

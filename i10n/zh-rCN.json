@@ -9,5 +9,7 @@
 "room_in_ready_state": "房间正在准备中，无法加入",
 "not_ready_state": "不在准备状态",
 "room_already_locked": "房间已经锁定",
-"room_already_unlocked": "房间已经解锁"
+"room_already_unlocked": "房间已经解锁",
+"room_already_cycled": "房间已在循环模式",
+"room_already_not_cycled": "房间已不在循环模式"
 }

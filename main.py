@@ -257,6 +257,7 @@ class MainHandler(SimplePacketHandler):
             #不是房主
             packet_not_host = ClientBoundSelectChartPacket.Failed(get_i10n_text("zh-rCN", "not_host"))
             self.connection.send(packet_not_host)
+            self.connection.send(ClientBoundChangeHostPacket(False))
             return
         #是房主
         #设置chart
@@ -317,15 +318,62 @@ class MainHandler(SimplePacketHandler):
         
         # Change lock state
         rooms[roomId].locked = packet.lock
-        
+
         # Send success response
-        self.connection.send(ClientBoundLockRoomPacket.OK())
-        
+        self.connection.send(ClientBoundLockRoomPacket.Success())
+
         # Broadcast lock state change to all room members
         connections = get_connections(roomId)["connections"]
         for connection in connections:
             packet_lock_msg = ClientBoundMessagePacket(LockRoomMessage(packet.lock))
             connection.send(packet_lock_msg)
+
+    def handleCycleRoom(self, packet: ServerBoundCycleRoomPacket) -> None:
+        """Handle lock/unlock room request."""
+        room_id_query_result = get_roomId(self.user_info.id)
+        if room_id_query_result.get("status") == "1":
+            # User not in any room
+            packet_not_in_room = ClientBoundCycleRoomPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            self.connection.send(packet_not_in_room)
+            return
+
+        roomId = room_id_query_result["roomId"]
+        print(f"Lock room request from user {self.user_info.id} in room {roomId}, lock: {packet.cycle}")
+
+        # Check if user is the host
+        if get_host(roomId)["host"] != self.user_info.id:
+            # Not the host
+            packet_not_host = ClientBoundCycleRoomPacket.Failed(get_i10n_text("zh-rCN", "not_host"))
+            self.connection.send(packet_not_host)
+            return
+
+        # Check current lock state
+        current_cycle_state = rooms[roomId].cycle
+
+        if packet.cycle and current_cycle_state:
+            # Trying to lock an already locked room
+            packet_already_cycled = ClientBoundCycleRoomPacket.Failed(get_i10n_text("zh-rCN", "room_already_cycled"))
+            self.connection.send(packet_already_cycled)
+            return
+
+        if not packet.cycle and not current_cycle_state:
+            # Trying to unlock an already unlocked room
+            packet_already_cycled = ClientBoundCycleRoomPacket.Failed(get_i10n_text("zh-rCN", "room_already_not_cycled"))
+            self.connection.send(packet_already_cycled)
+            return
+
+        # Change lock state
+        rooms[roomId].cycle = packet.cycle
+
+        # Send success response
+        self.connection.send(ClientBoundCycleRoomPacket.Success())
+
+        # Broadcast lock state change to all room members
+        connections = get_connections(roomId)["connections"]
+        for connection in connections:
+            packet_cycle_msg = ClientBoundMessagePacket(CycleRoomMessage(packet.cycle))
+            connection.send(packet_cycle_msg)
+
 
 #        connection.send(packet)
     def handleRequestStart(self, packet: ServerBoundRequestStartPacket) -> None:
@@ -348,6 +396,7 @@ class MainHandler(SimplePacketHandler):
             #不是房主
             packet_not_host = ClientBoundRequestStartPacket.Failed(get_i10n_text("zh-rCN", "not_host"))
             self.connection.send(packet_not_host)
+            self.connection.send(ClientBoundChangeHostPacket(False))
             return
         #切换状态WaitForReady
         set_state(roomId, WaitForReady())
@@ -567,8 +616,8 @@ class MainHandler(SimplePacketHandler):
         if len(all_users) == len(ready_users) and len(all_users) > 0:
             print(f"All players ready in room {roomId}, starting game...")
             
-            # Clear finished states before starting
-            room.finished.clear()
+            # Clear ready states before starting
+            room.ready.clear()
             
             # Send StartPlayingMessage to all room members
             for connection in connections:
@@ -601,8 +650,31 @@ class MainHandler(SimplePacketHandler):
             for connection in connections:
                 packet_game_end = ClientBoundMessagePacket(GameEndMessage())
                 connection.send(packet_game_end)
-            
+
+            if room.cycle:
+                room_users = get_all_users(roomId)["users"]
+
+                target_key = room.host
+
+                key_list = list(room_users.keys())
+
+                try:
+                    target_index = key_list.index(target_key)
+                    next_index = (target_index + 1) % len(key_list)
+                    new_host = key_list[next_index]
+
+                except ValueError:
+                    new_host = key_list[0]
+
+                change_host(roomId, new_host)
+                print(f"新房主将为: [{new_host}] {room_users[new_host].info.name}")
+
+                room_users[new_host].connection.send(ClientBoundChangeHostPacket(True))
+                self.connection.send(ClientBoundChangeHostPacket(False))
+
+
             # Change room state back to SelectChart
+            room.chart=None
             set_state(roomId, SelectChart(chartId=room.chart))
             
             # Broadcast state change to all room members
