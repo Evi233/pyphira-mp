@@ -21,6 +21,7 @@ class MainHandler(SimplePacketHandler):
         print("Authenticate with token", packet.token)
         user_info = FETCHER.get_user_info(packet.token)
         self.user_info = user_info
+        self.user_lang = user_info.language
 
         packet = ClientBoundAuthenticatePacket.Success(UserProfile(user_info.id, user_info.name), False)
         self.connection.send(packet)
@@ -72,7 +73,7 @@ class MainHandler(SimplePacketHandler):
             self.connection.send(packet)
         elif creat_room_result == {"status": "1"}:
             #房间已存在
-            packet = ClientBoundCreateRoomPacket.Failed(get_i10n_text("zh-rCN", "room_already_exist"))
+            packet = ClientBoundCreateRoomPacket.Failed(get_i10n_text(self.user_lang, "room_already_exist"))
             self.connection.send(packet)
 
     def handleJoinRoom(self, packet: ServerBoundJoinRoomPacket) -> None:
@@ -98,7 +99,7 @@ class MainHandler(SimplePacketHandler):
             if packet.roomId in rooms:
                 if isinstance(rooms[packet.roomId].state, WaitForReady):
                     # Room is in ready state, cannot join
-                    packet_room_in_ready = ClientBoundJoinRoomPacket.Failed(get_i10n_text("zh-rCN", "room_in_ready_state"))
+                    packet_room_in_ready = ClientBoundJoinRoomPacket.Failed(get_i10n_text(self.user_lang, "room_in_ready_state"))
                     self.connection.send(packet_room_in_ready)
                     return
             
@@ -137,15 +138,15 @@ class MainHandler(SimplePacketHandler):
                 self.connection.send(packet)
             elif join_room_result == {"status": "1"}:
                 #房间不存在
-                packet = ClientBoundJoinRoomPacket.Failed(get_i10n_text("zh-rCN", "room_not_exist"))
+                packet = ClientBoundJoinRoomPacket.Failed(get_i10n_text(self.user_lang, "room_not_exist"))
                 self.connection.send(packet)
             elif join_room_result == {"status": "2"}:
                 #用户已存在
-                packet = ClientBoundJoinRoomPacket.Failed(get_i10n_text("zh-rCN", "user_already_exist"))
+                packet = ClientBoundJoinRoomPacket.Failed(get_i10n_text(self.user_lang, "user_already_exist"))
                 self.connection.send(packet)
             elif join_room_result == {"status": "3"}:
                 #用户已存在
-                packet = ClientBoundJoinRoomPacket.Failed(get_i10n_text("zh-rCN", "room_already_locked"))
+                packet = ClientBoundJoinRoomPacket.Failed(get_i10n_text(self.user_lang, "room_already_locked"))
                 self.connection.send(packet)
     #ServerBoundLeaveRoomPacket
 
@@ -161,7 +162,7 @@ class MainHandler(SimplePacketHandler):
         
         if room_id_query_result.get("status") == "1":
             print(f"用户 [{self.user_info.id}] {self.user_info.name} 尝试离开房间但未在任何房间中找到。")
-            self.connection.send(ClientBoundLeaveRoomPacket.Failed(get_i10n_text("zh-rCN", "not_in_room")))
+            self.connection.send(ClientBoundLeaveRoomPacket.Failed(get_i10n_text(self.user_lang, "not_in_room")))
             return
 
         # ========== 在踢人之前完成所有决策 ==========
@@ -195,9 +196,9 @@ class MainHandler(SimplePacketHandler):
         if leave_room_result.get("status") != "0":
             error_message = ""
             if leave_room_result == {"status": "1"}:
-                error_message = get_i10n_text("zh-rCN", "room_not_exist")
+                error_message = get_i10n_text(self.user_lang, "room_not_exist")
             elif leave_room_result == {"status": "2"}:
-                error_message = get_i10n_text("zh-rCN", "user_not_exist")
+                error_message = get_i10n_text(self.user_lang, "user_not_exist")
             else:
                 error_message = f"[Error leaving room: {leave_room_result}]"
             self.connection.send(ClientBoundLeaveRoomPacket.Failed(error_message))
@@ -241,7 +242,7 @@ class MainHandler(SimplePacketHandler):
         roomId = get_roomId(self.user_info.id)
         if roomId == None:
             #用户不在房间
-            packet_not_in_room = ClientBoundSelectChartPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            packet_not_in_room = ClientBoundSelectChartPacket.Failed(get_i10n_text(self.user_lang, "not_in_room"))
             self.connection.send(packet_not_in_room)
             return
         roomId = roomId["roomId"]
@@ -253,7 +254,7 @@ class MainHandler(SimplePacketHandler):
             #判断是不是房主
         if get_host(roomId)["host"] != self.user_info.id:
             #不是房主
-            packet_not_host = ClientBoundSelectChartPacket.Failed(get_i10n_text("zh-rCN", "not_host"))
+            packet_not_host = ClientBoundSelectChartPacket.Failed(get_i10n_text(self.user_lang, "not_host"))
             self.connection.send(packet_not_host)
             self.connection.send(ClientBoundChangeHostPacket(False))
             return
@@ -285,7 +286,7 @@ class MainHandler(SimplePacketHandler):
         room_id_query_result = get_roomId(self.user_info.id)
         if room_id_query_result.get("status") == "1":
             # User not in any room
-            packet_not_in_room = ClientBoundLockRoomPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            packet_not_in_room = ClientBoundLockRoomPacket.Failed(get_i10n_text(self.user_lang, "not_in_room"))
             self.connection.send(packet_not_in_room)
             return
         
@@ -295,7 +296,7 @@ class MainHandler(SimplePacketHandler):
         # Check if user is the host
         if get_host(roomId)["host"] != self.user_info.id:
             # Not the host
-            packet_not_host = ClientBoundLockRoomPacket.Failed(get_i10n_text("zh-rCN", "not_host"))
+            packet_not_host = ClientBoundLockRoomPacket.Failed(get_i10n_text(self.user_lang, "not_host"))
             self.connection.send(packet_not_host)
             return
         
@@ -304,13 +305,13 @@ class MainHandler(SimplePacketHandler):
         
         if packet.lock and current_lock_state:
             # Trying to lock an already locked room
-            packet_already_locked = ClientBoundLockRoomPacket.Failed(get_i10n_text("zh-rCN", "room_already_locked"))
+            packet_already_locked = ClientBoundLockRoomPacket.Failed(get_i10n_text(self.user_lang, "room_already_locked"))
             self.connection.send(packet_already_locked)
             return
         
         if not packet.lock and not current_lock_state:
             # Trying to unlock an already unlocked room
-            packet_already_unlocked = ClientBoundLockRoomPacket.Failed(get_i10n_text("zh-rCN", "room_already_unlocked"))
+            packet_already_unlocked = ClientBoundLockRoomPacket.Failed(get_i10n_text(self.user_lang, "room_already_unlocked"))
             self.connection.send(packet_already_unlocked)
             return
         
@@ -331,7 +332,7 @@ class MainHandler(SimplePacketHandler):
         room_id_query_result = get_roomId(self.user_info.id)
         if room_id_query_result.get("status") == "1":
             # User not in any room
-            packet_not_in_room = ClientBoundCycleRoomPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            packet_not_in_room = ClientBoundCycleRoomPacket.Failed(get_i10n_text(self.user_lang, "not_in_room"))
             self.connection.send(packet_not_in_room)
             return
 
@@ -341,7 +342,7 @@ class MainHandler(SimplePacketHandler):
         # Check if user is the host
         if get_host(roomId)["host"] != self.user_info.id:
             # Not the host
-            packet_not_host = ClientBoundCycleRoomPacket.Failed(get_i10n_text("zh-rCN", "not_host"))
+            packet_not_host = ClientBoundCycleRoomPacket.Failed(get_i10n_text(self.user_lang, "not_host"))
             self.connection.send(packet_not_host)
             return
 
@@ -350,13 +351,13 @@ class MainHandler(SimplePacketHandler):
 
         if packet.cycle and current_cycle_state:
             # Trying to lock an already locked room
-            packet_already_cycled = ClientBoundCycleRoomPacket.Failed(get_i10n_text("zh-rCN", "room_already_cycled"))
+            packet_already_cycled = ClientBoundCycleRoomPacket.Failed(get_i10n_text(self.user_lang, "room_already_cycled"))
             self.connection.send(packet_already_cycled)
             return
 
         if not packet.cycle and not current_cycle_state:
             # Trying to unlock an already unlocked room
-            packet_already_cycled = ClientBoundCycleRoomPacket.Failed(get_i10n_text("zh-rCN", "room_already_not_cycled"))
+            packet_already_cycled = ClientBoundCycleRoomPacket.Failed(get_i10n_text(self.user_lang, "room_already_not_cycled"))
             self.connection.send(packet_already_cycled)
             return
 
@@ -380,19 +381,19 @@ class MainHandler(SimplePacketHandler):
         #检查在不在房间里
         if roomId == None:
             #用户不在房间
-            packet_not_in_room = ClientBoundRequestStartPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            packet_not_in_room = ClientBoundRequestStartPacket.Failed(get_i10n_text(self.user_lang, "not_in_room"))
             self.connection.send(packet_not_in_room)
             return
         roomId = roomId["roomId"]
         #检查是否在SelectChart状态
         if not isinstance(rooms[roomId].state, SelectChart):
-            packet_not_select_chart = ClientBoundRequestStartPacket.Failed(get_i10n_text("zh-rCN", "not_select_chart"))
+            packet_not_select_chart = ClientBoundRequestStartPacket.Failed(get_i10n_text(self.user_lang, "not_select_chart"))
             self.connection.send(packet_not_select_chart)
             return
         #验证房主身份
         elif get_host(roomId)["host"] != self.user_info.id:
             #不是房主
-            packet_not_host = ClientBoundRequestStartPacket.Failed(get_i10n_text("zh-rCN", "not_host"))
+            packet_not_host = ClientBoundRequestStartPacket.Failed(get_i10n_text(self.user_lang, "not_host"))
             self.connection.send(packet_not_host)
             self.connection.send(ClientBoundChangeHostPacket(False))
             return
@@ -416,7 +417,7 @@ class MainHandler(SimplePacketHandler):
         room_id_query_result = get_roomId(self.user_info.id)
         if room_id_query_result.get("status") == "1":
             # User not in any room
-            packet_not_in_room = ClientBoundPlayedPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            packet_not_in_room = ClientBoundPlayedPacket.Failed(get_i10n_text(self.user_lang, "not_in_room"))
             self.connection.send(packet_not_in_room)
             return
         
@@ -465,7 +466,7 @@ class MainHandler(SimplePacketHandler):
         room_id_query_result = get_roomId(self.user_info.id)
         if room_id_query_result.get("status") == "1":
             # User not in any room
-            packet_not_in_room = ClientBoundAbortPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            packet_not_in_room = ClientBoundAbortPacket.Failed(get_i10n_text(self.user_lang, "not_in_room"))
             self.connection.send(packet_not_in_room)
             return
 
@@ -500,7 +501,7 @@ class MainHandler(SimplePacketHandler):
         room_id_query_result = get_roomId(self.user_info.id)
         if room_id_query_result.get("status") == "1":
             # User not in any room
-            packet_not_in_room = ClientBoundCancelReadyPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            packet_not_in_room = ClientBoundCancelReadyPacket.Failed(get_i10n_text(self.user_lang, "not_in_room"))
             self.connection.send(packet_not_in_room)
             return
         
@@ -509,7 +510,7 @@ class MainHandler(SimplePacketHandler):
         
         # Check if room is in WaitForReady state
         if not isinstance(rooms[roomId].state, WaitForReady):
-            packet_not_ready_state = ClientBoundCancelReadyPacket.Failed(get_i10n_text("zh-rCN", "not_ready_state"))
+            packet_not_ready_state = ClientBoundCancelReadyPacket.Failed(get_i10n_text(self.user_lang, "not_ready_state"))
             self.connection.send(packet_not_ready_state)
             return
         
@@ -537,9 +538,9 @@ class MainHandler(SimplePacketHandler):
             if cancel_ready_result.get("status") != "0":
                 error_message = ""
                 if cancel_ready_result == {"status": "1"}:
-                    error_message = get_i10n_text("zh-rCN", "room_not_exist")
+                    error_message = get_i10n_text(self.user_lang, "room_not_exist")
                 elif cancel_ready_result == {"status": "2"}:
-                    error_message = get_i10n_text("zh-rCN", "user_not_exist")
+                    error_message = get_i10n_text(self.user_lang, "user_not_exist")
                 else:
                     error_message = f"[Error canceling ready: {cancel_ready_result}]"
                 self.connection.send(ClientBoundCancelReadyPacket.Failed(error_message))
@@ -561,7 +562,7 @@ class MainHandler(SimplePacketHandler):
         room_id_query_result = get_roomId(self.user_info.id)
         if room_id_query_result.get("status") == "1":
             # User not in any room
-            packet_not_in_room = ClientBoundReadyPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            packet_not_in_room = ClientBoundReadyPacket.Failed(get_i10n_text(self.user_lang, "not_in_room"))
             self.connection.send(packet_not_in_room)
             return
         
@@ -570,7 +571,7 @@ class MainHandler(SimplePacketHandler):
         
         # Check if room is in WaitForReady state
         if not isinstance(rooms[roomId].state, WaitForReady):
-            packet_not_ready_state = ClientBoundReadyPacket.Failed(get_i10n_text("zh-rCN", "not_ready_state"))
+            packet_not_ready_state = ClientBoundReadyPacket.Failed(get_i10n_text(self.user_lang, "not_ready_state"))
             self.connection.send(packet_not_ready_state)
             return
         
@@ -579,9 +580,9 @@ class MainHandler(SimplePacketHandler):
         if set_ready_result.get("status") != "0":
             error_message = ""
             if set_ready_result == {"status": "1"}:
-                error_message = get_i10n_text("zh-rCN", "room_not_exist")
+                error_message = get_i10n_text(self.user_lang, "room_not_exist")
             elif set_ready_result == {"status": "2"}:
-                error_message = get_i10n_text("zh-rCN", "user_not_exist")
+                error_message = get_i10n_text(self.user_lang, "user_not_exist")
             else:
                 error_message = f"[Error setting ready: {set_ready_result}]"
             self.connection.send(ClientBoundReadyPacket.Failed(error_message))

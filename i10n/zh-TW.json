@@ -1,0 +1,15 @@
+{
+  "room_already_exist": "房間已經存在",
+  "room_not_exist": "房間不存在",
+  "user_already_exist": "用戶已在房間中",
+  "user_not_exist": "用戶不在房間中",
+  "not_in_room": "您不在任何房間中",
+  "not_host": "您不是房主，無法執行此操作",
+  "not_select_chart": "目前不是選擇譜面的狀態",
+  "room_in_ready_state": "房間正在準備中，無法加入",
+  "not_ready_state": "不在準備狀態",
+  "room_already_locked": "房間已經鎖定",
+  "room_already_unlocked": "房間已經解鎖",
+  "room_already_cycled": "房間已在循環模式",
+  "room_already_not_cycled": "房間已不在循環模式"
+}

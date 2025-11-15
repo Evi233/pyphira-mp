@@ -1,0 +1,15 @@
+{
+  "room_already_exist": "Room already exists",
+  "room_not_exist": "Room does not exist",
+  "user_already_exist": "User is already in the room",
+  "user_not_exist": "User is not in the room",
+  "not_in_room": "You are not in any room",
+  "not_host": "You are not the host and cannot perform this action",
+  "not_select_chart": "Not in chart selection state",
+  "room_in_ready_state": "Room is in ready state, cannot join",
+  "not_ready_state": "Not in ready state",
+  "room_already_locked": "Room is already locked",
+  "room_already_unlocked": "Room is already unlocked",
+  "room_already_cycled": "Room is already in cycle mode",
+  "room_already_not_cycled": "Room is no longer in cycle mode"
+}
