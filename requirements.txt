@@ -1,0 +1,4 @@
+requests
+pydantic
+tenacity
+asyncio

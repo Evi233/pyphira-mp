@@ -27,11 +27,9 @@ class MainHandler(SimplePacketHandler):
 
         packet = ClientBoundMessagePacket(ChatMessage(-1, f"你好 [{user_info.id}] {user_info.name}"))
         self.connection.send(packet)
-        packet = ClientBoundMessagePacket(ChatMessage(-1,"你正在一个早期的 pphira-mp 测试实例上游玩，功能不完整"))
+        packet = ClientBoundMessagePacket(ChatMessage(-1, "你正在一个 pyphira-mp 实例上游玩"))
         self.connection.send(packet)
-        packet = ClientBoundMessagePacket(ChatMessage(-1,"Phira协议 by lRENyaaa"))
-        self.connection.send(packet)
-        packet = ClientBoundMessagePacket(ChatMessage(-1,"逻辑 by Evi233"))
+        packet = ClientBoundMessagePacket(ChatMessage(-1, "协议实现 by lRENyaaa | 网络逻辑 by Evi23"))
         self.connection.send(packet)
     def on_player_disconnected(self) -> None:
         """
