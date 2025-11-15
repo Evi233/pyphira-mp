@@ -277,6 +277,52 @@ class MainHandler(SimplePacketHandler):
         packet_success = ClientBoundSelectChartPacket.Success()
         self.connection.send(packet_success)
 #        packet = ClientBoundChangeStatePacket(SelectChart(chartId=packet.id))
+    def handleLockRoom(self, packet: ServerBoundLockRoomPacket) -> None:
+        """Handle lock/unlock room request."""
+        room_id_query_result = get_roomId(self.user_info.id)
+        if room_id_query_result.get("status") == "1":
+            # User not in any room
+            packet_not_in_room = ClientBoundLockRoomPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            self.connection.send(packet_not_in_room)
+            return
+        
+        roomId = room_id_query_result["roomId"]
+        print(f"Lock room request from user {self.user_info.id} in room {roomId}, lock: {packet.lock}")
+        
+        # Check if user is the host
+        if get_host(roomId)["host"] != self.user_info.id:
+            # Not the host
+            packet_not_host = ClientBoundLockRoomPacket.Failed(get_i10n_text("zh-rCN", "not_host"))
+            self.connection.send(packet_not_host)
+            return
+        
+        # Check current lock state
+        current_lock_state = rooms[roomId].locked
+        
+        if packet.lock and current_lock_state:
+            # Trying to lock an already locked room
+            packet_already_locked = ClientBoundLockRoomPacket.Failed(get_i10n_text("zh-rCN", "room_already_locked"))
+            self.connection.send(packet_already_locked)
+            return
+        
+        if not packet.lock and not current_lock_state:
+            # Trying to unlock an already unlocked room
+            packet_already_unlocked = ClientBoundLockRoomPacket.Failed(get_i10n_text("zh-rCN", "room_already_unlocked"))
+            self.connection.send(packet_already_unlocked)
+            return
+        
+        # Change lock state
+        rooms[roomId].locked = packet.lock
+        
+        # Send success response
+        self.connection.send(ClientBoundLockRoomPacket.OK())
+        
+        # Broadcast lock state change to all room members
+        connections = get_connections(roomId)["connections"]
+        for connection in connections:
+            packet_lock_msg = ClientBoundMessagePacket(LockRoomMessage(packet.lock))
+            connection.send(packet_lock_msg)
+
 #        connection.send(packet)
     def handleRequestStart(self, packet: ServerBoundRequestStartPacket) -> None:
         roomId = get_roomId(self.user_info.id)
