@@ -185,7 +185,7 @@ class MainHandler(SimplePacketHandler):
                 #用户已存在
                 packet = ClientBoundJoinRoomPacket.Failed(get_i10n_text(self.user_lang, "room_already_locked"))
                 self.connection.send(packet)
-            elif join_room_result == {"status": "3"}:
+            elif join_room_result == {"status": "4"}:
                 #用户已存在
                 packet = ClientBoundJoinRoomPacket.Failed(get_i10n_text(self.user_lang, "room_duplicate_join"))
                 self.connection.send(packet)
