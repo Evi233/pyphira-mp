@@ -11,9 +11,10 @@ from server import Server
 from i10n import get_i10n_text
 import asyncio
 import random
+import config
 
-HOST = '0.0.0.0'
-PORT = 12346
+HOST = config.get_host("host", "0.0.0.0")
+PORT = config.get_port("port", 12346)
 FETCHER = PhiraFetcher()
 
 class MainHandler(SimplePacketHandler):
