@@ -20,7 +20,7 @@ online_user_list = []
 class MainHandler(SimplePacketHandler):
     def handleAuthenticate(self, packet: ServerBoundAuthenticatePacket) -> None:
         print("Authenticate with token", packet.token)
-        user_info = FETCHER.get_user_info(packet.token)
+        user_info = self._get_cached_user_info(packet.token)
 
         if user_info.id in online_user_list:
             packet = ClientBoundAuthenticatePacket.Failed(get_i10n_text(user_info.language, "user_duplicate_join"))
@@ -42,6 +42,17 @@ class MainHandler(SimplePacketHandler):
         self.connection.send(packet)
         packet = ClientBoundMessagePacket(ChatMessage(-1, "协议实现 by lRENyaaa | 网络逻辑 by Evi23"))
         self.connection.send(packet)
+    def _get_cached_user_info(self, token: str) -> Optional[any]:
+        """带缓存的获取用户信息"""
+        if token in auth_cache:
+            print(f"Cache hit for token {token[:8]}...")
+            return auth_cache[token]
+        
+        print(f"Cache miss for token {token[:8]}..., fetching from API")
+        user_info = FETCHER.get_user_info(token)
+        auth_cache[token] = user_info
+        return user_info
+    
     def on_player_disconnected(self) -> None:
         """
         当玩家断开连接时，这个方法会被调用。
