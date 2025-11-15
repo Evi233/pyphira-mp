@@ -312,6 +312,7 @@ class MainHandler(SimplePacketHandler):
         packet_notify = ClientBoundRequestStartPacket.Success()
         print(packet_notify)
         self.connection.send(packet_notify)
+        self.checkReady(roomId)
     
     def handlePlayed(self, packet: ServerBoundPlayedPacket) -> None:
         """Handle played packet with score submission."""
@@ -355,6 +356,34 @@ class MainHandler(SimplePacketHandler):
             print(f"Error processing played packet: {e}")
             packet_error = ClientBoundPlayedPacket.Failed(f"Failed to fetch record: {str(e)}")
             self.connection.send(packet_error)
+
+    def handleAbort(self, packet: ServerBoundAbortPacket) -> None:
+        """Handle abort packet with score submission."""
+        room_id_query_result = get_roomId(self.user_info.id)
+        if room_id_query_result.get("status") == "1":
+            # User not in any room
+            packet_not_in_room = ClientBoundAbortPacket.Failed(get_i10n_text("zh-rCN", "not_in_room"))
+            self.connection.send(packet_not_in_room)
+            return
+
+        roomId = room_id_query_result["roomId"]
+        print(f"Played submission from user {self.user_info.id} in room {roomId}, Abort")
+
+        # Check if room is in Playing state
+        if not isinstance(rooms[roomId].state, Playing):
+            packet_not_playing_state = ClientBoundAbortPacket.Failed("Not in playing state")
+            self.connection.send(packet_not_playing_state)
+            return
+
+        # Send success response to the submitting player
+        self.connection.send(ClientBoundAbortPacket.Success())
+
+        # Broadcast PlayedMessage to all room members (including self)
+        connections = get_connections(roomId)["connections"]
+        for connection in connections:
+            packet_played_msg = ClientBoundMessagePacket(AbortMessage(self.user_info.id))
+            connection.send(packet_played_msg)
+
 
 
     def handleCancelReady(self, packet: ServerBoundCancelReadyPacket) -> None:
@@ -460,11 +489,17 @@ class MainHandler(SimplePacketHandler):
                 ReadyMessage(self.user_info.id)
             )
             connection.send(packet_ready_msg)
-        
+
+        self.checkReady(roomId)
+
+
+    def checkReady(self, roomId):
         # Check if all players are ready
         room = rooms[roomId]
         all_users = list(room.users.keys())
         ready_users = list(room.ready.keys())
+
+        connections = get_connections(roomId)["connections"]
         
         # Check if everyone is ready (including host)
         if len(all_users) == len(ready_users) and len(all_users) > 0:
@@ -490,12 +525,8 @@ class MainHandler(SimplePacketHandler):
 def handle_connection(connection: Connection):
     handler = MainHandler(connection)
 
-    #WARNING:傻逼嵌套def
-    def on_disconnect():
-        handler.on_player_disconnected()
-
     connection.set_receiver(lambda packet: packet.handle(handler))
-    connection.on_close(on_disconnect)
+    connection.on_close(lambda: handler.on_player_disconnected())
 
 if __name__ == '__main__':
     server = Server(HOST, PORT, handle_connection)
