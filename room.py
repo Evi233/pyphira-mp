@@ -63,13 +63,16 @@ def add_user(roomId, user_info, connection):
     0: 成功
     1: 房间不存在
     2: 用户已存在"""
-    print("[add_user]called as"+ roomId +",userid:"+str(user_info.id))
+    print(f"{user_info.id} 正在加入房间 {roomId}")
     if roomId not in rooms:            # 房间不存在
-        print("room 消失了")
+        print(f"{user_info.id} 试图加入不存在的房间 {roomId}")
         return {"status": "1"}
     if user_info.id in rooms[roomId].users: # 用户已存在
-        print("user 存在"+str(user_info.id))
+        print(f"{user_info.id} 试图重复加入房间 {roomId}")
         return {"status": "2"}
+    if rooms[roomId].locked:
+        print(f"{user_info.id} 试图加入已锁定的房间 {roomId}")
+        return {"status": "3"}
     # 【修改】现在存储 RoomUser 实例，而不是直接存储 user_info
     rooms[roomId].users[user_info.id] = RoomUser(user_info, connection)
     return {"status": "0"}

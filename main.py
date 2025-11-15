@@ -113,7 +113,7 @@ class MainHandler(SimplePacketHandler):
                 room_state = get_room_state(packet.roomId)["state"]
                 #获取所有用户
                 users = get_all_users(packet.roomId)["users"]
-                user_profiles = [UserProfile(user.info.id, user.info.name) for user  in users.values()]
+                user_profiles = [UserProfile(user.info.id, user.info.name) for user in users.values()]
                 #获取所有监控者
                 monitors = get_all_monitors(packet.roomId)["monitors"]
                 #检查是否是直播
@@ -144,6 +144,10 @@ class MainHandler(SimplePacketHandler):
             elif join_room_result == {"status": "2"}:
                 #用户已存在
                 packet = ClientBoundJoinRoomPacket.Failed(get_i10n_text("zh-rCN", "user_already_exist"))
+                self.connection.send(packet)
+            elif join_room_result == {"status": "3"}:
+                #用户已存在
+                packet = ClientBoundJoinRoomPacket.Failed(get_i10n_text("zh-rCN", "room_already_locked"))
                 self.connection.send(packet)
     #ServerBoundLeaveRoomPacket
 
