@@ -12,5 +12,7 @@
   "room_already_unlocked": "房间已经解锁",
   "room_already_cycled": "房间已在循环模式",
   "room_already_not_cycled": "房间已不在循环模式",
-  "user_duplicate_join": "你不能重复加入服务器"
+  "user_duplicate_join": "你不能重复加入服务器",
+  "room_duplicate_create": "你不能重复创建房间",
+  "room_duplicate_join": "你不能重复加入房间"
 }

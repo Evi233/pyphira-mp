@@ -17,21 +17,28 @@ from cachetools import TTLCache
 HOST = config.get_host("host", "0.0.0.0")
 PORT = config.get_port("port", 12346)
 FETCHER = PhiraFetcher()
+
 # 初始化TTL缓存: 最大1000个token，每个存活5分钟
 auth_cache = TTLCache(maxsize=1000, ttl=300)
-online_user_list = []
+online_user_list = {}
+
 class MainHandler(SimplePacketHandler):
     def handleAuthenticate(self, packet: ServerBoundAuthenticatePacket) -> None:
         print("Authenticate with token", packet.token)
         user_info = self._get_cached_user_info(packet.token)
 
         if user_info.id in online_user_list:
-            packet = ClientBoundAuthenticatePacket.Failed(get_i10n_text(user_info.language, "user_duplicate_join"))
-            self.connection.send(packet)
-            self.connection.close()
-            return
+            old_connection: Connection = online_user_list[user_info.id]
+            if not old_connection.is_closed():
+                packet = ClientBoundAuthenticatePacket.Failed(get_i10n_text(user_info.language, "user_duplicate_join"))
+                self.connection.send(packet)
+                self.connection.close()
+                return
+            else:
+                old_connection.writer = None
+                old_connection.closeHandler()
 
-        online_user_list.append(user_info.id)
+        online_user_list[user_info.id] = self.connection
 
         self.user_info = user_info
         self.user_lang = user_info.language
@@ -64,7 +71,8 @@ class MainHandler(SimplePacketHandler):
         # 检查这个玩家是否已经鉴权（登录），并且有 user_info 信息
         if hasattr(self, 'user_info') and self.user_info:
             print(f"用户 [{self.user_info.id}] {self.user_info.name} 下线。")
-            online_user_list.remove(self.user_info.id)
+            del online_user_list[self.user_info.id]
+            print(online_user_list)
             # 获取这个用户所在的所有房间
             rooms_of_user = get_rooms_of_user(self.user_info.id)
             if rooms_of_user["status"] == "0":
@@ -99,6 +107,10 @@ class MainHandler(SimplePacketHandler):
         elif creat_room_result == {"status": "1"}:
             #房间已存在
             packet = ClientBoundCreateRoomPacket.Failed(get_i10n_text(self.user_lang, "room_already_exist"))
+            self.connection.send(packet)
+        elif creat_room_result == {"status": "2"}:
+            #房间已存在
+            packet = ClientBoundCreateRoomPacket.Failed(get_i10n_text(self.user_lang, "room_duplicate_create"))
             self.connection.send(packet)
 
     def handleJoinRoom(self, packet: ServerBoundJoinRoomPacket) -> None:
@@ -172,6 +184,10 @@ class MainHandler(SimplePacketHandler):
             elif join_room_result == {"status": "3"}:
                 #用户已存在
                 packet = ClientBoundJoinRoomPacket.Failed(get_i10n_text(self.user_lang, "room_already_locked"))
+                self.connection.send(packet)
+            elif join_room_result == {"status": "3"}:
+                #用户已存在
+                packet = ClientBoundJoinRoomPacket.Failed(get_i10n_text(self.user_lang, "room_duplicate_join"))
                 self.connection.send(packet)
     #ServerBoundLeaveRoomPacket
 

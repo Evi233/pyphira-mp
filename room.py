@@ -39,7 +39,11 @@ def create_room(roomId, user_info):
     """Create a room with the given ID.
     房间创建返回定义:
     0: 成功
-    1: 房间已存在"""
+    1: 房间已存在
+    2: 玩家已在房间内"""
+    if any(user_info.id in room.users for i, room in rooms):
+        return {"status": "2"}
+
     if roomId in rooms:                 # 已存在
         return {"status": "1"}
     rooms[roomId] = Room(roomId)       # 初始化并放入字典
@@ -62,8 +66,12 @@ def add_user(roomId, user_info, connection):
     返回定义:
     0: 成功
     1: 房间不存在
-    2: 用户已存在"""
+    2: 用户已存在
+    3: 房间已锁定
+    4: 玩家已在房间内"""
     print(f"{user_info.id} 正在加入房间 {roomId}")
+    if any(user_info.id in room.users for i, room in rooms):
+        return {"status": "3"}
     if roomId not in rooms:            # 房间不存在
         print(f"{user_info.id} 试图加入不存在的房间 {roomId}")
         return {"status": "1"}

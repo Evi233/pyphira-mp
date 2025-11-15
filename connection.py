@@ -32,18 +32,43 @@ class Connection:
 
         self.receiver(PacketRegistry.decode(ByteBuf(data)))
 
+    def is_closed(self):
+        return self.writer.is_closing()
+
     def close(self):
         asyncio.create_task(self.close_and_wait())
 
-    async def close_and_wait(self, writer_timeout=2):
-        if self.writer:
-            await asyncio.wait_for(self.writer.drain(), writer_timeout)
+    async def close_and_wait(self, writer_timeout: float = 2) -> None:
+        """
+        优雅关闭：先尽力把缓存 drain 出去，再关闭 TCP 连接，
+        最后回调 closeHandler。所有“连接已死”类异常都被静默消化。
+        """
+        if self.writer is None:  # 已经关过
+            return
 
-        self.writer.close()
-        await self.writer.wait_closed()
+        # 1. 尽力 drain
+        try:
+            if not self.is_closed():
+                await asyncio.wait_for(self.writer.drain(), timeout=writer_timeout)
+        except (ConnectionResetError, BrokenPipeError, OSError, asyncio.TimeoutError):
+            print("Drain skipped: connection already down or timeout")
+        except Exception as e:
+            print("Unexpected drain error:", e)
+
+        # 2. 关闭 TCP 连接
+        try:
+            self.writer.close()
+            await asyncio.wait_for(self.writer.wait_closed(), timeout=writer_timeout)
+        except Exception:
+            print("Error while closing writer, ignored")
+
+        # 3. 清引用，防重复关闭
+        self.writer = None
+
+        # 4. 业务回调
         if self.closeHandler:
             try:
-                self.closeHandler()          # 不需要任何参数
+                self.closeHandler()
             except Exception as e:
                 print('[Connection] closeHandler 异常:', e)
 

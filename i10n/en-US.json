@@ -12,5 +12,7 @@
   "room_already_unlocked": "Room is already unlocked",
   "room_already_cycled": "Room is already in cycle mode",
   "room_already_not_cycled": "Room is no longer in cycle mode",
-  "user_duplicate_join": "You cannot join the server multiple times"
+  "user_duplicate_join": "You cannot join the server multiple times",
+  "room_duplicate_create": "You cannot create the same room twice.",
+  "room_duplicate_join": "You cannot join the same room twice."
 }
