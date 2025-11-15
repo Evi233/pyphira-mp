@@ -1,6 +1,9 @@
 from connection import Connection
 from asyncioutil import *
 
+
+SUPPORTED_VERSIONS = [1]
+
 class Server:
 
     def __init__(self, host, port, handler):
@@ -13,6 +16,13 @@ class Server:
         client_version = (await reader.readexactly(1))[0]
         print("Connected", addr)
         print("Version", client_version)
+
+        if client_version not in SUPPORTED_VERSIONS:
+            print(f"Unsupported protocol version: {client_version} from {addr}")
+            writer.close()
+            await writer.wait_closed()
+            return
+
         connection = Connection(writer)
 
         try:
