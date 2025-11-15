@@ -21,6 +21,7 @@ class Room:
         self.monitors = []
         self.chart = None
         self.ready = {} # 用于存储用户是否准备好的状态
+        self.finished = {} # 用于存储用户是否完成游戏的状态
 
 # 初始化监控列表
 # 【注意】这里有一个潜在的bug：monitors应该是一个列表，但目前每次循环都会覆盖它。
@@ -281,6 +282,37 @@ def cancel_ready(roomId, user_id):
     #这里把用户的id从ready字典中移除
     del rooms[roomId].ready[user_id]
     return {"status": "0"}
+
+def set_finished(roomId, user_id):
+    """Set a user as finished in the room.
+    返回定义:
+    0: 成功
+    1: 房间不存在
+    2: 用户不存在"""
+    if roomId not in rooms:            # 房间不存在
+        return {"status": "1"}
+    if user_id not in rooms[roomId].users: # 用户不存在
+        return {"status": "2"}
+    #设置用户为完成
+    #这里把用户的id放进finished字典
+    rooms[roomId].finished[user_id] = True
+    return {"status": "0"}
+
+def cancel_finished(roomId, user_id):
+    """Cancel a user's finished status in the room.
+    返回定义:
+    0: 成功
+    1: 房间不存在
+    2: 用户不存在"""
+    if roomId not in rooms:            # 房间不存在
+        return {"status": "1"}
+    if user_id not in rooms[roomId].users: # 用户不存在
+        return {"status": "2"}
+    #取消用户的finished状态
+    #这里把用户的id从finished字典中移除
+    del rooms[roomId].finished[user_id]
+    return {"status": "0"}
+
 #---群体操作---
 #获取一个人所在的所有房间
 def get_rooms_of_user(user_id):

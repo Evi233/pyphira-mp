@@ -351,6 +351,12 @@ class MainHandler(SimplePacketHandler):
                     )
                 )
                 connection.send(packet_played_msg)
+            
+            # Mark user as finished
+            set_finished(roomId, self.user_info.id)
+            
+            # Check if all players have finished
+            self.checkAllFinished(roomId)
                 
         except Exception as e:
             print(f"Error processing played packet: {e}")
@@ -383,6 +389,12 @@ class MainHandler(SimplePacketHandler):
         for connection in connections:
             packet_played_msg = ClientBoundMessagePacket(AbortMessage(self.user_info.id))
             connection.send(packet_played_msg)
+            
+        # Mark user as finished
+        set_finished(roomId, self.user_info.id)
+        
+        # Check if all players have finished
+        self.checkAllFinished(roomId)
 
 
 
@@ -505,6 +517,9 @@ class MainHandler(SimplePacketHandler):
         if len(all_users) == len(ready_users) and len(all_users) > 0:
             print(f"All players ready in room {roomId}, starting game...")
             
+            # Clear finished states before starting
+            room.finished.clear()
+            
             # Send StartPlayingMessage to all room members
             for connection in connections:
                 packet_start_msg = ClientBoundMessagePacket(
@@ -519,6 +534,34 @@ class MainHandler(SimplePacketHandler):
             for connection in connections:
                 packet_state_change = ClientBoundChangeStatePacket(Playing())
                 connection.send(packet_state_change)
+
+    def checkAllFinished(self, roomId):
+        """Check if all players have finished playing and return to SelectChart state."""
+        room = rooms[roomId]
+        all_users = list(room.users.keys())
+        finished_users = list(room.finished.keys())
+        
+        # Check if everyone has finished (including those who aborted)
+        if len(all_users) == len(finished_users) and len(all_users) > 0:
+            print(f"All players finished in room {roomId}, returning to SelectChart...")
+            
+            connections = get_connections(roomId)["connections"]
+            
+            # Send GameEndMessage to all room members
+            for connection in connections:
+                packet_game_end = ClientBoundMessagePacket(GameEndMessage())
+                connection.send(packet_game_end)
+            
+            # Change room state back to SelectChart
+            set_state(roomId, SelectChart(chartId=room.chart))
+            
+            # Broadcast state change to all room members
+            for connection in connections:
+                packet_state_change = ClientBoundChangeStatePacket(SelectChart(chartId=room.chart))
+                connection.send(packet_state_change)
+            
+            # Clear finished states for next round
+            room.finished.clear()
 
         
         
