@@ -13,6 +13,20 @@ import random
 import config
 from typing import Optional, Any  # 添加 Any
 from cachetools import TTLCache
+import logging
+import sys
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('app.log', encoding='utf-8')
+    ]
+)
+
+logger = logging.getLogger(__name__)
 
 HOST = config.get_host("host", "0.0.0.0")
 PORT = config.get_port("port", 12346)
@@ -24,7 +38,7 @@ online_user_list = {}
 
 class MainHandler(SimplePacketHandler):
     def handleAuthenticate(self, packet: ServerBoundAuthenticatePacket) -> None:
-        print("Authenticate with token", packet.token)
+        logger.info(f"Authenticate with token {packet.token}")
         user_info = self._get_cached_user_info(packet.token)
 
         if user_info.id in online_user_list:
@@ -55,10 +69,10 @@ class MainHandler(SimplePacketHandler):
     def _get_cached_user_info(self, token: str) -> Optional[any]:
         """带缓存的获取用户信息"""
         if token in auth_cache:
-            print(f"Cache hit for token {token[:8]}...")
+            logger.debug(f"Cache hit for token {token[:8]}...")
             return auth_cache[token]
         
-        print(f"Cache miss for token {token[:8]}..., fetching from API")
+        logger.debug(f"Cache miss for token {token[:8]}..., fetching from API")
         user_info = FETCHER.get_user_info(token)
         auth_cache[token] = user_info
         return user_info
@@ -70,9 +84,9 @@ class MainHandler(SimplePacketHandler):
         """
         # 检查这个玩家是否已经鉴权（登录），并且有 user_info 信息
         if hasattr(self, 'user_info') and self.user_info:
-            print(f"用户 [{self.user_info.id}] {self.user_info.name} 下线。")
+            logger.info(f"用户 [{self.user_info.id}] {self.user_info.name} 下线。")
             del online_user_list[self.user_info.id]
-            print(online_user_list)
+            logger.debug(f"Online user list after disconnect: {online_user_list}")
             # 获取这个用户所在的所有房间
             rooms_of_user = get_rooms_of_user(self.user_info.id)
             if rooms_of_user["status"] == "0":
@@ -91,7 +105,7 @@ class MainHandler(SimplePacketHandler):
             del self.user_info
 
     def handleCreateRoom(self, packet: ServerBoundCreateRoomPacket) -> None:
-        print("Create room with id", packet.roomId)
+        logger.info(f"Create room with id {packet.roomId}")
         creat_room_result = create_room(packet.roomId, self.user_info)
         if creat_room_result == {"status": "0"}:
             #错误处理
@@ -114,7 +128,7 @@ class MainHandler(SimplePacketHandler):
             self.connection.send(packet)
 
     def handleJoinRoom(self, packet: ServerBoundJoinRoomPacket) -> None:
-        print("Join room with id", packet.roomId)
+        logger.info(f"Join room with id {packet.roomId}")
         #检查是否是监控者
         # 【修改】is_monitor 只接受一个 user_id 参数
         monitor_result = is_monitor(self.user_info.id)
@@ -194,7 +208,7 @@ class MainHandler(SimplePacketHandler):
     def handleLeaveRoom(self, packet: ServerBoundLeaveRoomPacket) -> None:
         room_id_query_result = get_roomId(self.user_info.id)
         roomId = room_id_query_result["roomId"]
-        print("Leave room with id", roomId)
+        logger.info(f"Leave room with id {roomId}")
 
         # --------- 鉴权 ---------
         if self.user_info is None:
@@ -202,12 +216,12 @@ class MainHandler(SimplePacketHandler):
             return
         
         if room_id_query_result.get("status") == "1":
-            print(f"用户 [{self.user_info.id}] {self.user_info.name} 尝试离开房间但未在任何房间中找到。")
+            logger.warning(f"用户 [{self.user_info.id}] {self.user_info.name} 尝试离开房间但未在任何房间中找到。")
             self.connection.send(ClientBoundLeaveRoomPacket.Failed(get_i10n_text(self.user_lang, "not_in_room")))
             return
 
         # ========== 在踢人之前完成所有决策 ==========
-        print(f"User [{self.user_info.id}] {self.user_info.name} attempts to leave room {roomId}.")
+        logger.info(f"User [{self.user_info.id}] {self.user_info.name} attempts to leave room {roomId}.")
         
         # 提前获取房主ID，避免重复查询
         current_host_id = get_host(roomId)["host"]
@@ -263,10 +277,10 @@ class MainHandler(SimplePacketHandler):
 
         # --------- 执行之前记录的决策 ---------
         if should_destroy_room:
-            print(f"Room {roomId} is empty, destroying...")
+            logger.info(f"Room {roomId} is empty, destroying...")
             destroy_room(roomId)
         elif new_host_id:
-            print(f"Room {roomId} has new host {new_host_id}")
+            logger.info(f"Room {roomId} has new host {new_host_id}")
             change_host(roomId, new_host_id)
             # 确保新房主还在房间里（防御性编程）
             if new_host_id in room.users:
@@ -278,7 +292,7 @@ class MainHandler(SimplePacketHandler):
 
 
     def handleSelectChart(self, packet: ServerBoundSelectChartPacket) -> None:
-        print("Select chart with id", packet.id)
+        logger.info(f"Select chart with id {packet.id}")
         #获取用户所在房间
         roomId = get_roomId(self.user_info.id)
         if roomId == None:
@@ -332,7 +346,7 @@ class MainHandler(SimplePacketHandler):
             return
         
         roomId = room_id_query_result["roomId"]
-        print(f"Lock room request from user {self.user_info.id} in room {roomId}, lock: {packet.lock}")
+        logger.info(f"Lock room request from user {self.user_info.id} in room {roomId}, lock: {packet.lock}")
         
         # Check if user is the host
         if get_host(roomId)["host"] != self.user_info.id:
@@ -378,7 +392,7 @@ class MainHandler(SimplePacketHandler):
             return
 
         roomId = room_id_query_result["roomId"]
-        print(f"Lock room request from user {self.user_info.id} in room {roomId}, lock: {packet.cycle}")
+        logger.info(f"Cycle room request from user {self.user_info.id} in room {roomId}, cycle: {packet.cycle}")
 
         # Check if user is the host
         if get_host(roomId)["host"] != self.user_info.id:
@@ -418,7 +432,7 @@ class MainHandler(SimplePacketHandler):
 #        connection.send(packet)
     def handleRequestStart(self, packet: ServerBoundRequestStartPacket) -> None:
         roomId = get_roomId(self.user_info.id)
-        print("Game start at room", roomId, "by user", self.user_info.id)
+        logger.info(f"Game start at room {roomId} by user {self.user_info.id}")
         #检查在不在房间里
         if roomId == None:
             #用户不在房间
@@ -449,7 +463,7 @@ class MainHandler(SimplePacketHandler):
             connection.send(packet_state_change)
         #给自己发送通知
         packet_notify = ClientBoundRequestStartPacket.Success()
-        print(packet_notify)
+        logger.debug(f"Sending packet: {packet_notify}")
         self.connection.send(packet_notify)
         self.checkReady(roomId)
     
@@ -463,7 +477,7 @@ class MainHandler(SimplePacketHandler):
             return
         
         roomId = room_id_query_result["roomId"]
-        print(f"Played submission from user {self.user_info.id} in room {roomId}, record ID: {packet.id}")
+        logger.info(f"Played submission from user {self.user_info.id} in room {roomId}, record ID: {packet.id}")
         
         # Check if room is in Playing state
         if not isinstance(rooms[roomId].state, Playing):
@@ -498,7 +512,7 @@ class MainHandler(SimplePacketHandler):
             self.checkAllFinished(roomId)
                 
         except Exception as e:
-            print(f"Error processing played packet: {e}")
+            logger.error(f"Error processing played packet: {e}")
             packet_error = ClientBoundPlayedPacket.Failed(f"Failed to fetch record: {str(e)}")
             self.connection.send(packet_error)
 
@@ -512,7 +526,7 @@ class MainHandler(SimplePacketHandler):
             return
 
         roomId = room_id_query_result["roomId"]
-        print(f"Played submission from user {self.user_info.id} in room {roomId}, Abort")
+        logger.info(f"Abort submission from user {self.user_info.id} in room {roomId}")
 
         # Check if room is in Playing state
         if not isinstance(rooms[roomId].state, Playing):
@@ -547,7 +561,7 @@ class MainHandler(SimplePacketHandler):
             return
         
         roomId = room_id_query_result["roomId"]
-        print("Cancel ready at room", roomId, "by user", self.user_info.id)
+        logger.info(f"Cancel ready at room {roomId} by user {self.user_info.id}")
         
         # Check if room is in WaitForReady state
         if not isinstance(rooms[roomId].state, WaitForReady):
@@ -608,7 +622,7 @@ class MainHandler(SimplePacketHandler):
             return
         
         roomId = room_id_query_result["roomId"]
-        print("Ready at room", roomId, "by user", self.user_info.id)
+        logger.info(f"Ready at room {roomId} by user {self.user_info.id}")
         
         # Check if room is in WaitForReady state
         if not isinstance(rooms[roomId].state, WaitForReady):
@@ -654,7 +668,7 @@ class MainHandler(SimplePacketHandler):
         
         # Check if everyone is ready (including host)
         if len(all_users) == len(ready_users) and len(all_users) > 0:
-            print(f"All players ready in room {roomId}, starting game...")
+            logger.info(f"All players ready in room {roomId}, starting game...")
             
             # Clear ready states before starting
             room.ready.clear()
@@ -682,7 +696,7 @@ class MainHandler(SimplePacketHandler):
         
         # Check if everyone has finished (including those who aborted)
         if len(all_users) == len(finished_users) and len(all_users) > 0:
-            print(f"All players finished in room {roomId}, returning to SelectChart...")
+            logger.info(f"All players finished in room {roomId}, returning to SelectChart...")
             
             connections = get_connections(roomId)["connections"]
             
@@ -707,7 +721,7 @@ class MainHandler(SimplePacketHandler):
                     new_host = key_list[0]
 
                 change_host(roomId, new_host)
-                print(f"新房主将为: [{new_host}] {room_users[new_host].info.name}")
+                logger.info(f"新房主将为: [{new_host}] {room_users[new_host].info.name}")
 
                 room_users[new_host].connection.send(ClientBoundChangeHostPacket(True))
                 self.connection.send(ClientBoundChangeHostPacket(False))

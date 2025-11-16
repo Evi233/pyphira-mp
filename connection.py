@@ -1,8 +1,11 @@
 import asyncio
+import logging
 
 from asyncioutil import write_message
 from rymc.phira.protocol import PacketRegistry
 from rymc.phira.protocol.util import ByteBuf
+
+logger = logging.getLogger(__name__)
 
 
 class Connection:
@@ -16,7 +19,7 @@ class Connection:
         data = PacketRegistry.encode(packet).toBytes()
         #如果是00，那么不print（防止诊断消息过多）
         if data[0] != 0x00:
-            print("Send", data.hex())
+            logger.debug(f"Send packet: {data.hex()}")
         asyncio.create_task(write_message(self.writer, data))
 
     def set_receiver(self, receiver):
@@ -25,7 +28,7 @@ class Connection:
     def on_receive(self, data):
         #如果接到00开头的包，那么不print（防止诊断消息过多）
         if data[0] != 0x00:
-            print("Receive", data.hex())
+            logger.debug(f"Receive packet: {data.hex()}")
         if self.receiver is None:
             return
 
@@ -51,16 +54,16 @@ class Connection:
             if not self.is_closed():
                 await asyncio.wait_for(self.writer.drain(), timeout=writer_timeout)
         except (ConnectionResetError, BrokenPipeError, OSError, asyncio.TimeoutError):
-            print("Drain skipped: connection already down or timeout")
+            logger.warning("Drain skipped: connection already down or timeout")
         except Exception as e:
-            print("Unexpected drain error:", e)
+            logger.error(f"Unexpected drain error: {e}")
 
         # 2. 关闭 TCP 连接
         try:
             self.writer.close()
             await asyncio.wait_for(self.writer.wait_closed(), timeout=writer_timeout)
         except Exception:
-            print("Error while closing writer, ignored")
+            logger.warning("Error while closing writer, ignored")
 
         # 3. 清引用，防重复关闭
         self.writer = None
@@ -70,7 +73,7 @@ class Connection:
             try:
                 self.closeHandler()
             except Exception as e:
-                print('[Connection] closeHandler 异常:', e)
+                logger.error(f'[Connection] closeHandler 异常: {e}')
 
     def on_close(self, close_handler):
         self.closeHandler = close_handler

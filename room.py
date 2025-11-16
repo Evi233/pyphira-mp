@@ -1,5 +1,9 @@
 from rymc.phira.protocol.data.state import *
-# 全局房间“列表”（实际是 dict）
+import logging
+
+logger = logging.getLogger(__name__)
+
+# 全局房间"列表"（实际是 dict）
 rooms = {}
 
 # RoomUser 类：用于存储用户的详细信息和其网络连接
@@ -32,7 +36,7 @@ try:
         for line in f:
             monitors.append(line.strip()) # 将每个监控者ID添加到列表中
 except FileNotFoundError:
-    print("monitors.txt not found. No monitors loaded.")
+    logger.warning("monitors.txt not found. No monitors loaded.")
 
 
 def create_room(roomId, user_info):
@@ -70,18 +74,18 @@ def add_user(roomId, user_info, connection):
     2: 用户已存在
     3: 房间已锁定
     4: 玩家已在房间内"""
-    print(f"{user_info.id} 正在加入房间 {roomId}")
+    logger.info(f"{user_info.id} 正在加入房间 {roomId}")
     for roomId, room in rooms.items():
         if user_info.id in room.users:
             return {"status": "3"}
     if roomId not in rooms:            # 房间不存在
-        print(f"{user_info.id} 试图加入不存在的房间 {roomId}")
+        logger.warning(f"{user_info.id} 试图加入不存在的房间 {roomId}")
         return {"status": "1"}
     if user_info.id in rooms[roomId].users: # 用户已存在
-        print(f"{user_info.id} 试图重复加入房间 {roomId}")
+        logger.warning(f"{user_info.id} 试图重复加入房间 {roomId}")
         return {"status": "2"}
     if rooms[roomId].locked:
-        print(f"{user_info.id} 试图加入已锁定的房间 {roomId}")
+        logger.warning(f"{user_info.id} 试图加入已锁定的房间 {roomId}")
         return {"status": "3"}
     # 【修改】现在存储 RoomUser 实例，而不是直接存储 user_info
     rooms[roomId].users[user_info.id] = RoomUser(user_info, connection)
@@ -113,7 +117,7 @@ def get_host(roomId):
     1: 房间不存在"""
     if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
-    print(rooms[roomId].host)
+    logger.debug(f"Room {roomId} host: {rooms[roomId].host}")
     return {"host": rooms[roomId].host}
 
 def get_roomId(user_id):
