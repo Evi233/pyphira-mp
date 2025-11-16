@@ -41,8 +41,9 @@ def create_room(roomId, user_info):
     0: 成功
     1: 房间已存在
     2: 玩家已在房间内"""
-    if any(user_info.id in room.users for i, room in rooms):
-        return {"status": "2"}
+    for roomId, room in rooms.items():
+        if user_info.id in room.users:
+            return {"status": "2"}
 
     if roomId in rooms:                 # 已存在
         return {"status": "1"}
@@ -70,8 +71,9 @@ def add_user(roomId, user_info, connection):
     3: 房间已锁定
     4: 玩家已在房间内"""
     print(f"{user_info.id} 正在加入房间 {roomId}")
-    if any(user_info.id in room.users for i, room in rooms):
-        return {"status": "3"}
+    for roomId, room in rooms.items():
+        if user_info.id in room.users:
+            return {"status": "3"}
     if roomId not in rooms:            # 房间不存在
         print(f"{user_info.id} 试图加入不存在的房间 {roomId}")
         return {"status": "1"}
