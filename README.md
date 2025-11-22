@@ -1,8 +1,9 @@
-# pyphira-mp
-
-一个基于 Python asyncio 的 **Phira** 多人游戏服务器
-
----
+<img src="logo.png" alt="pyphira logo" align="right" width="23%">
+<div align="center">
+  <h1>pyphira-mp</h1>
+  <h3>一个基于 Python asyncio 的 <b>Phira</b> 多人游戏服务器</h3>
+  <h5><i>正在积极测试中，可能不稳定，如遇任何问题，欢迎提供反馈和建议！</i></h5>
+</div>
 
 ## 介绍
 
@@ -19,7 +20,6 @@ pyphira-mp 是**完全独立**的 Phira 多人游戏服务器端实现
 * 房主退出房间时会重新指定新的房主
 * 没有实现完整的monitor能力
 
-> **注意**：当前pyphira-mp仍在测试阶段，可能不稳定。欢迎提供反馈和建议！
 ---
 
 ## 如何使用
