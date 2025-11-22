@@ -2,6 +2,9 @@
 
 一个基于 Python asyncio 的 **Phira** 多人游戏服务器
 
+<img width="128" height="128" alt="pyphira logo" src="https://github.com/user-attachments/assets/4750c731-d2df-4657-bc21-2941a5299b81" />
+
+
 ---
 
 ## 介绍
