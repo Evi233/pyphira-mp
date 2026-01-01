@@ -752,7 +752,7 @@ class MainHandler(SimplePacketHandler):
                 logger.info(f"新房主将为: [{new_host}] {room_users[new_host].info.name}")
 
                 room_users[new_host].connection.send(ClientBoundChangeHostPacket(True))
-                self.connection.send(ClientBoundChangeHostPacket(False))
+                room_users[target_key].connection.send(ClientBoundChangeHostPacket(False))
 
             # Change room state back to SelectChart
             room.chart = None
