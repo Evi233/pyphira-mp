@@ -28,8 +28,6 @@ class Room:
         self.finished = {} # 用于存储用户是否完成游戏的状态
 
 # 初始化监控列表
-# 【注意】这里有一个潜在的bug：monitors应该是一个列表，但目前每次循环都会覆盖它。
-# 应该修改为：
 monitors = [] # 先初始化为空列表
 try:
     with open("monitors.txt", "r") as f:
@@ -45,7 +43,8 @@ def create_room(roomId, user_info):
     0: 成功
     1: 房间已存在
     2: 玩家已在房间内"""
-    for roomId, room in rooms.items():
+    # [修复] 变量覆盖：将循环变量 roomId 改为 existing_room_id，避免覆盖参数 roomId
+    for existing_room_id, room in rooms.items():
         if user_info.id in room.users:
             return {"status": "2"}
 
@@ -75,9 +74,14 @@ def add_user(roomId, user_info, connection):
     3: 房间已锁定
     4: 玩家已在房间内"""
     logger.info(f"{user_info.id} 正在加入房间 {roomId}")
-    for roomId, room in rooms.items():
+    
+    # [修复] 变量覆盖：将循环变量 roomId 改为 existing_room_id
+    for existing_room_id, room in rooms.items():
         if user_info.id in room.users:
+            # 注意：这里的 status 3 在原始定义中是"房间已锁定"，但逻辑是在检查"玩家是否已在其他房间"
+            # 根据上下文，这里可能想返回类似"玩家忙"的状态，保留原逻辑 status 3
             return {"status": "3"}
+            
     if roomId not in rooms:            # 房间不存在
         logger.warning(f"{user_info.id} 试图加入不存在的房间 {roomId}")
         return {"status": "1"}
@@ -125,10 +129,12 @@ def get_roomId(user_id):
     返回定义:
     0: 成功
     1: 用户不存在"""
-    for roomId, room in rooms.items():
+    # [优化] 虽然这里没有覆盖参数，但为了统一代码风格，将循环变量改为 r_id
+    for r_id, room in rooms.items():
         if user_id in room.users:
-            return {"roomId": roomId}
+            return {"roomId": r_id}
     return {"status": "1"}
+
 def change_host(roomId, host_id):
     """Change the host of the room.
     返回定义:
@@ -238,6 +244,7 @@ def get_connections(roomId):
         # 【修改】从 RoomUser 实例中获取 connection
         connections.append(rooms[roomId].users[user_id].connection)
     return {"status": "0", "connections": connections}
+
 def get_room_state(roomId):
     """Get the state of the room.
     返回定义:
@@ -246,6 +253,7 @@ def get_room_state(roomId):
     if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
     return {"status": "0", "state": rooms[roomId].state}
+
 def get_all_users(roomId):
     """Get all users in the room.
     返回定义:
@@ -254,6 +262,7 @@ def get_all_users(roomId):
     if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
     return {"status": "0", "users": rooms[roomId].users}
+
 def get_all_monitors(roomId):
     """Get all monitors in the room.
     返回定义:
@@ -262,6 +271,7 @@ def get_all_monitors(roomId):
     if roomId not in rooms:            # 房间不存在
         return {"status": "1"}
     return {"status": "0", "monitors": rooms[roomId].monitors}
+
 def is_live(roomId):
     """Check if the room is live.
     返回定义:
@@ -285,6 +295,7 @@ def set_ready(roomId, user_id):
     #这里把用户的id放进ready字典
     rooms[roomId].ready[user_id] = True
     return {"status": "0"}
+
 def cancel_ready(roomId, user_id):
     """Cancel a user's ready status in the room.
     返回定义:
@@ -338,9 +349,10 @@ def get_rooms_of_user(user_id):
     0: 成功"""
     #TODO:1:用户不存在
     rooms_of_user = []
-    for roomId in rooms:
-        if user_id in rooms[roomId].users:
-            rooms_of_user.append(roomId)
+    # [优化] 将循环变量改为 r_id，避免未来可能的混淆
+    for r_id in rooms:
+        if user_id in rooms[r_id].users:
+            rooms_of_user.append(r_id)
     return {"status": "0", "rooms": rooms_of_user}
 
 def remove_user_from_all_rooms(user_id):
@@ -352,10 +364,11 @@ def remove_user_from_all_rooms(user_id):
     user_was_in_a_room = False # 标志，用于判断用户是否至少从一个房间被移除了
     
     # 遍历所有房间的 ID
-    # 使用 list(rooms.keys()) 是为了在遍历时避免字典结构被修改可能导致的问题，虽然这里不会发生
-    for roomId in list(rooms.keys()):
+    # 使用 list(rooms.keys()) 是为了在遍历时避免字典结构被修改可能导致的问题
+    # [优化] 将循环变量改为 r_id
+    for r_id in list(rooms.keys()):
         # 调用 player_leave 尝试从当前房间移除用户
-        result = player_leave(roomId, user_id)
+        result = player_leave(r_id, user_id)
         
         # 如果 player_leave 返回状态 0 (成功移除)
         if result.get("status") == "0":
