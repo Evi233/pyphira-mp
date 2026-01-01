@@ -27,26 +27,26 @@ class ChartInfo(BaseModel):
     """谱面信息模型"""
     id: int
     name: str
-    level: str
-    difficulty: float
-    charter: str
-    composer: str
-    illustrator: str
-    description: str
-    ranked: bool
-    reviewed: bool
-    stable: bool
-    stableRequest: bool
-    illustration: str
-    preview: str
-    file: str
-    uploader: int
-    tags: list[str]
-    rating: float
-    ratingCount: int
-    created: datetime
-    updated: datetime
-    chartUpdated: datetime
+    level: Optional[str] = None
+    difficulty: Optional[float] = 0.0
+    charter: Optional[str] = None
+    composer: Optional[str] = None
+    illustrator: Optional[str] = None
+    description: Optional[str] = None
+    ranked: Optional[bool] = False
+    reviewed: Optional[bool] = False
+    stable: Optional[bool] = False
+    stableRequest: Optional[bool] = False
+    illustration: Optional[str] = None
+    preview: Optional[str] = None
+    file: Optional[str] = None
+    uploader: Optional[int] = 0
+    tags: Optional[list[str]] = None
+    rating: Optional[float] = 0.0
+    ratingCount: Optional[int] = 0
+    created: Optional[datetime] = None
+    updated: Optional[datetime] = None
+    chartUpdated: Optional[datetime] = None
 
 class RecordResult(BaseModel):
     """玩家游玩判定结果"""
