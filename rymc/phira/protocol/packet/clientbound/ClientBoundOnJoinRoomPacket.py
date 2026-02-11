@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from ..ClientBoundPacket import ClientBoundPacket
 from ...data.UserProfile import UserProfile
+from ...data.FullUserProfile import FullUserProfile
 from ...util.PacketWriter import PacketWriter
 
 
@@ -22,8 +23,13 @@ class ClientBoundOnJoinRoomPacket(ClientBoundPacket):
     monitor: bool
 
     def encode(self, buf) -> None:
-        PacketWriter.write(buf, self.userProfile)
-        PacketWriter.write(buf, self.monitor)
+        """Encode this notification using a ``FullUserProfile`` wrapper.
+
+        The updated protocol bundles the monitor flag within the profile,
+        so construct a ``FullUserProfile`` and write it directly.
+        """
+        full_profile = FullUserProfile(self.userProfile, self.monitor)
+        PacketWriter.write(buf, full_profile)
 
 
 __all__ = ["ClientBoundOnJoinRoomPacket"]

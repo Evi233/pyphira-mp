@@ -8,6 +8,7 @@ from ..ClientBoundPacket import ClientBoundPacket
 from ...data.PacketResult import PacketResult
 from ...data.UserProfile import UserProfile
 from ...data.RoomInfo import RoomInfo
+from ...data.FullUserProfile import FullUserProfile
 from ...util.PacketWriter import PacketWriter
 
 
@@ -37,7 +38,15 @@ class _ClientBoundAuthenticatePacketFailed(ClientBoundAuthenticatePacket):
 
 # ``Success`` variant containing user profile, monitor flag and optional room info.
 class _ClientBoundAuthenticatePacketSuccess(ClientBoundAuthenticatePacket):
-    """Represents a successful authentication response."""
+    """Represents a successful authentication response.
+
+    In the latest protocol the monitor flag is incorporated into the
+    ``FullUserProfile``.  When encoding, the provided ``UserProfile`` and
+    ``isMonitor`` flag are wrapped into a single ``FullUserProfile``
+    instance and written to the buffer.  A subsequent boolean indicates
+    whether room information is present, followed by the ``RoomInfo`` if
+    provided.
+    """
 
     def __init__(self, userProfile: UserProfile, isMonitor: bool, roomInfo: Optional[RoomInfo] = None) -> None:
         self.userProfile = userProfile
@@ -45,10 +54,11 @@ class _ClientBoundAuthenticatePacketSuccess(ClientBoundAuthenticatePacket):
         self.roomInfo = roomInfo
 
     def encode(self, buf) -> None:
+        # Success flag
         PacketWriter.write(buf, PacketResult.SUCCESS)
-        PacketWriter.write(buf, self.userProfile)
-        # Write the monitor flag (deprecated but retained for backward compatibility)
-        PacketWriter.write(buf, self.isMonitor)
+        # Compose a FullUserProfile to include the monitor flag in the user encoding
+        full_profile = FullUserProfile(self.userProfile, self.isMonitor)
+        PacketWriter.write(buf, full_profile)
         # Indicate and write optional room info
         hasRoomInfo = self.roomInfo is not None
         PacketWriter.write(buf, hasRoomInfo)

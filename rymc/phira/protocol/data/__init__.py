@@ -13,6 +13,7 @@ from __future__ import annotations
 from .PacketResult import PacketResult  # noqa: F401
 from .UserProfile import UserProfile  # noqa: F401
 from .RoomInfo import RoomInfo  # noqa: F401
+from .FullUserProfile import FullUserProfile  # noqa: F401
 
 # The ``state`` and ``message`` subpackages are imported for their side
 # effects (they register their classes with PacketWriter) and for ease of
@@ -26,6 +27,7 @@ __all__ = [
     "PacketResult",
     "UserProfile",
     "RoomInfo",
+    "FullUserProfile",
     "state",
     "message",
 ]

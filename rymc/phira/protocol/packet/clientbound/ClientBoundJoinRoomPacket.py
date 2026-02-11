@@ -13,6 +13,8 @@ from typing import List
 from ..ClientBoundPacket import ClientBoundPacket
 from ...data.PacketResult import PacketResult
 from ...util.PacketWriter import PacketWriter
+from ...util.NettyPacketUtil import encodeVarInt
+from ...data.FullUserProfile import FullUserProfile
 from ...data.state.GameState import GameState
 from ...data.UserProfile import UserProfile
 
@@ -57,19 +59,23 @@ class _ClientBoundJoinRoomPacketSuccess(ClientBoundJoinRoomPacket):
         self.isLive = isLive
 
     def encode(self, buf) -> None:
+        """Encode a successful join-room response.
+
+        The latest protocol expects a VarInt-length-prefixed list of
+        ``FullUserProfile`` objects rather than separate user/monitor lists.
+        Each entry encodes the embedded ``UserProfile`` and monitor flag.
+        Finally, the live flag is appended.
+        """
         PacketWriter.write(buf, PacketResult.SUCCESS)
         PacketWriter.write(buf, self.gameState)
-        # Write total number of participants as a byte
-        total = len(self.users) + len(self.monitors)
-        PacketWriter.writeByte(buf, total)
-        # Encode users with monitor flag False
-        for user in self.users:
-            PacketWriter.write(buf, user)
-            PacketWriter.write(buf, False)
-        # Encode monitors with monitor flag True
-        for monitor in self.monitors:
-            PacketWriter.write(buf, monitor)
-            PacketWriter.write(buf, True)
+        # Convert users/monitors into FullUserProfile sequence
+        full_profiles = FullUserProfile.from_lists(self.users, self.monitors)
+        # Write participant count as VarInt
+        encodeVarInt(buf, len(full_profiles))
+        # Encode each full profile
+        for profile in full_profiles:
+            PacketWriter.write(buf, profile)
+        # Append live flag
         PacketWriter.write(buf, self.isLive)
 
 
