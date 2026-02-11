@@ -759,6 +759,11 @@ class MainHandler(SimplePacketHandler):
 
                 change_host(roomId, new_host)
                 logger.info(f"新房主将为: [{new_host}] {room_users[new_host].info.name}")
+                connections = get_connections(roomId)["connections"]
+                #如果旧房主和新房主不同，则发送消息
+                if new_host != target_key:
+                    for connection in connections:
+                        connection.send(ClientBoundMessagePacket(NewHostMessage(new_host)))
 
                 room_users[new_host].connection.send(ClientBoundChangeHostPacket(True))
                 room_users[target_key].connection.send(ClientBoundChangeHostPacket(False))
