@@ -43,7 +43,6 @@ def create_room(roomId, user_info):
     0: 成功
     1: 房间已存在
     2: 玩家已在房间内"""
-    # [修复] 变量覆盖：将循环变量 roomId 改为 existing_room_id，避免覆盖参数 roomId
     for existing_room_id, room in rooms.items():
         if user_info.id in room.users:
             return {"status": "2"}
@@ -75,11 +74,8 @@ def add_user(roomId, user_info, connection):
     4: 玩家已在房间内"""
     logger.info(f"{user_info.id} 正在加入房间 {roomId}")
     
-    # [修复] 变量覆盖：将循环变量 roomId 改为 existing_room_id
     for existing_room_id, room in rooms.items():
         if user_info.id in room.users:
-            # 注意：这里的 status 3 在原始定义中是"房间已锁定"，但逻辑是在检查"玩家是否已在其他房间"
-            # 根据上下文，这里可能想返回类似"玩家忙"的状态，保留原逻辑 status 3
             return {"status": "3"}
             
     if roomId not in rooms:            # 房间不存在
@@ -194,6 +190,7 @@ def set_chart(roomId, chart):
     set_state(roomId, SelectChart(chartId=chart))
     return {"status": "0"}
 
+
 def player_leave(roomId, user_id):
     """Remove a user from the room.
     返回定义:
@@ -204,8 +201,15 @@ def player_leave(roomId, user_id):
         return {"status": "1"}
     if user_id not in rooms[roomId].users: # 用户不存在
         return {"status": "2"}
-    # 【修改】使用 del 从字典中删除用户
+
+    # 从 users 中删除
     del rooms[roomId].users[user_id]
+    # 顺便清理 ready 和 finished 状态，防止脏数据影响逻辑
+    if user_id in rooms[roomId].ready:
+        del rooms[roomId].ready[user_id]
+    if user_id in rooms[roomId].finished:
+        del rooms[roomId].finished[user_id]
+
     return {"status": "0"}
 
 def monitor_leave(roomId, monitor_id):
@@ -349,7 +353,6 @@ def get_rooms_of_user(user_id):
     0: 成功"""
     #TODO:1:用户不存在
     rooms_of_user = []
-    # [优化] 将循环变量改为 r_id，避免未来可能的混淆
     for r_id in rooms:
         if user_id in rooms[r_id].users:
             rooms_of_user.append(r_id)
@@ -365,7 +368,6 @@ def remove_user_from_all_rooms(user_id):
     
     # 遍历所有房间的 ID
     # 使用 list(rooms.keys()) 是为了在遍历时避免字典结构被修改可能导致的问题
-    # [优化] 将循环变量改为 r_id
     for r_id in list(rooms.keys()):
         # 调用 player_leave 尝试从当前房间移除用户
         result = player_leave(r_id, user_id)

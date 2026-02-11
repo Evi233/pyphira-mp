@@ -14,5 +14,6 @@
   "room_already_not_cycled": "Room is no longer in cycle mode",
   "user_duplicate_join": "You cannot join the server multiple times",
   "room_duplicate_create": "You cannot create the same room twice.",
-  "room_duplicate_join": "You cannot join the same room twice."
+  "room_duplicate_join": "You cannot join the same room twice.",
+  "room_in_playing_state": "Room is in playing state, cannot join"
 }

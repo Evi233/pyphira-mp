@@ -14,5 +14,6 @@
   "room_already_not_cycled": "房間已不在循環模式",
   "user_duplicate_join": "你無法重複加入伺服器",
   "room_duplicate_create": "你無法重複建立房間",
-  "room_duplicate_join": "你無法重複加入房間"
+  "room_duplicate_join": "你無法重複加入房間",
+  "room_in_playing_state": "房間正在遊玩中，無法加入"
 }

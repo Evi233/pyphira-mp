@@ -120,6 +120,9 @@ class MainHandler(SimplePacketHandler):
                 for roomId in rooms_of_user["rooms"]:
                     # 从房间里移除玩家
                     player_leave(roomId, self.user_info.id)
+                    # 如果房间正在游玩，检查剩余玩家是否满足结束条件
+                    if roomId in rooms and isinstance(rooms[roomId].state, Playing):
+                        self.checkAllFinished(roomId)
                     # 提醒这些房间里的所有其他玩家
                     packet = ClientBoundMessagePacket(
                         LeaveRoomMessage(self.user_info.id, self.user_info.name))
@@ -180,6 +183,12 @@ class MainHandler(SimplePacketHandler):
                     packet_room_in_ready = ClientBoundJoinRoomPacket.Failed(
                         get_i10n_text(self.user_lang, "room_in_ready_state"))
                     self.connection.send(packet_room_in_ready)
+                    return
+                elif isinstance(rooms[packet.roomId].state, Playing):
+                    # Room is in playing state, cannot join
+                    packet_room_playing = ClientBoundJoinRoomPacket.Failed(
+                        get_i10n_text(self.user_lang, "room_in_playing_state"))
+                    self.connection.send(packet_room_playing)
                     return
 
             # 【修改】确保传递了 self.connection 参数
