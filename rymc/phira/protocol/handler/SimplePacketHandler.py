@@ -9,7 +9,7 @@ by subclasses as needed.
 
 from __future__ import annotations
 
-from connection import Connection
+from utils.connection import Connection
 from ..packet.clientbound.ClientBoundPongPacket import ClientBoundPongPacket
 from ..packet.serverbound import (
     ServerBoundPingPacket,

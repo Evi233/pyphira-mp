@@ -2,7 +2,7 @@
 import asyncio
 import logging
 
-from asyncioutil import write_message
+from utils.asyncioutil import write_message
 from rymc.phira.protocol import PacketRegistry
 from rymc.phira.protocol.util import ByteBuf
 

@@ -1,5 +1,5 @@
-from connection import Connection
-from asyncioutil import *
+from utils.connection import Connection
+from utils.asyncioutil import *
 import logging
 
 logger = logging.getLogger(__name__)

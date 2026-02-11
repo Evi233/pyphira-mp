@@ -8,18 +8,18 @@ from typing import Optional
 
 from cachetools import TTLCache
 
-import config
-import gitutil
-from connection import Connection
-from i10n import get_i10n_text
-from phiraapi import PhiraFetcher
-from room import *
+import utils.config as config
+import utils.gitutil as gitutil
+from utils.connection import Connection
+from utils.i10n import get_i10n_text
+from utils.phiraapi import PhiraFetcher
+from utils.room import *
 from rymc.phira.protocol.data import UserProfile
 from rymc.phira.protocol.data.message import *
 from rymc.phira.protocol.handler import SimplePacketHandler
 from rymc.phira.protocol.packet.clientbound import *
 from rymc.phira.protocol.packet.serverbound import *
-from server import Server
+from utils.server import Server
 
 HOST = config.get_host("host", "0.0.0.0")
 PORT = config.get_port("port", 12346)
