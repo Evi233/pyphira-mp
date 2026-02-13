@@ -3,6 +3,7 @@ from datetime import datetime
 import os
 import random
 import sys
+import functools
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +15,8 @@ from utils.connection import Connection
 from utils.i10n import get_i10n_text
 from utils.phiraapi import PhiraFetcher
 from utils.room import *
+from utils.eventbus import EventBus
+from utils.plugin_manager import PluginManager
 from rymc.phira.protocol.data import UserProfile
 from rymc.phira.protocol.data.message import *
 from rymc.phira.protocol.handler import SimplePacketHandler
@@ -56,6 +59,73 @@ git_info = gitutil.get_git_version(str(Path(__file__).resolve().parent))
 
 
 class MainHandler(SimplePacketHandler):
+    def __init__(self, connection: Connection, event_bus: EventBus) -> None:
+        super().__init__(connection)
+        self.event_bus = event_bus
+        self._install_handler_events()
+
+    def _install_handler_events(self) -> None:
+        """Wrap all handleXXX methods to emit before/after events.
+
+        This provides a generic event surface for plugins without having to
+        manually emit an event inside each handler implementation.
+
+        Events:
+          - handler.<method>.before
+          - handler.<method>.after
+
+        Payload contains: connection, handler, packet (if available), args/kwargs, result (after)
+        """
+
+        for name in dir(self):
+            if not name.startswith("handle") or name == "handle":
+                continue
+
+            attr = getattr(self, name, None)
+            if not callable(attr):
+                continue
+
+            # Avoid wrapping twice (in case someone calls this again)
+            if getattr(attr, "_pyphira_event_wrapped", False):
+                continue
+
+            orig = attr
+
+            @functools.wraps(orig)
+            def wrapped(*args, __name=name, __orig=orig, **kwargs):
+                packet = args[0] if args else None
+                try:
+                    self.event_bus.emit(
+                        f"handler.{__name}.before",
+                        connection=self.connection,
+                        handler=self,
+                        packet=packet,
+                        args=args,
+                        kwargs=kwargs,
+                    )
+                except Exception:
+                    logger.exception("Failed to emit handler event (before): %s", __name)
+
+                result = __orig(*args, **kwargs)
+
+                try:
+                    self.event_bus.emit(
+                        f"handler.{__name}.after",
+                        connection=self.connection,
+                        handler=self,
+                        packet=packet,
+                        args=args,
+                        kwargs=kwargs,
+                        result=result,
+                    )
+                except Exception:
+                    logger.exception("Failed to emit handler event (after): %s", __name)
+
+                return result
+
+            wrapped._pyphira_event_wrapped = True  # type: ignore[attr-defined]
+            setattr(self, name, wrapped)
+
     def handleAuthenticate(self, packet: ServerBoundAuthenticatePacket) -> None:
         logger.info(f"Authenticate with token {packet.token}")
         user_info = self._get_cached_user_info(packet.token)
@@ -78,6 +148,17 @@ class MainHandler(SimplePacketHandler):
 
         packet = ClientBoundAuthenticatePacket.Success(UserProfile(user_info.id, user_info.name), False)
         self.connection.send(packet)
+
+        # Emit auth success event for plugins
+        try:
+            self.event_bus.emit(
+                "auth.success",
+                connection=self.connection,
+                user_info=user_info,
+                handler=self,
+            )
+        except Exception:
+            logger.exception("Failed to emit auth.success")
 
         packet = ClientBoundMessagePacket(ChatMessage(-1, f"你好 [{user_info.id}] {user_info.name}"))
         self.connection.send(packet)
@@ -782,12 +863,41 @@ class MainHandler(SimplePacketHandler):
 
 
 def handle_connection(connection: Connection):
-    handler = MainHandler(connection)
+    handler = MainHandler(connection, event_bus)
 
-    connection.set_receiver(lambda packet: packet.handle(handler))
+    def _on_packet(packet):
+        # Generic packet events (for plugins)
+        try:
+            event_bus.emit(
+                "packet.received",
+                connection=connection,
+                handler=handler,
+                packet=packet,
+            )
+            event_bus.emit(
+                f"packet.{packet.__class__.__name__}.received",
+                connection=connection,
+                handler=handler,
+                packet=packet,
+            )
+        except Exception:
+            logger.exception("Failed to emit packet.received events")
+
+        packet.handle(handler)
+
+    connection.set_receiver(_on_packet)
     connection.on_close(lambda: handler.on_player_disconnected())
 
 
 if __name__ == '__main__':
-    server = Server(HOST, PORT, handle_connection)
-    asyncio.run(server.start())
+    async def _main() -> None:
+        # Global event bus + plugin manager (must start within a running loop)
+        global event_bus
+        event_bus = EventBus()
+        plugin_manager = PluginManager(event_bus, plugins_dir="plugins", poll_interval=1.0)
+        plugin_manager.start()
+
+        server = Server(HOST, PORT, handle_connection)
+        await server.start()
+
+    asyncio.run(_main())

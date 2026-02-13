@@ -56,6 +56,63 @@ python main.py
 
 ---
 
+## 插件系统（事件驱动 / 支持热重载）
+
+pyphira-mp 内置了一个轻量的**事件驱动插件系统**：
+
+- 插件目录固定为项目根目录：`./plugins/`
+- 插件是普通的 `.py` 文件，直接丢进该目录即可被加载
+- 运行中支持**热重载**：新增/修改/删除插件文件，会自动加载/重载/卸载（默认 1 秒轮询一次文件 `mtime`，不依赖额外第三方库）
+
+更完整的文档请见：[`pyphira-mp-plugin-example`](https://github.com/evi233/pyphira-mp-plugin-example)
+
+### 插件文件结构
+
+在 `plugins/` 下创建一个 `xxx.py`，提供一个 `setup(ctx)` 函数即可：
+
+```py
+# plugins/my_plugin.py
+
+PLUGIN_INFO = {
+    "name": "my_plugin",
+    "version": "0.0.1",
+}
+
+
+def setup(ctx):
+    # 注册事件监听
+    def on_auth_success(connection=None, user_info=None, **_):
+        ctx.logger.info("user authed: %s", getattr(user_info, "id", None))
+
+    ctx.on("auth.success", on_auth_success)
+
+    # 可选：返回 teardown，用于卸载/重载前清理资源
+    def teardown():
+        ctx.logger.info("plugin teardown")
+
+    return teardown
+```
+
+`ctx`（PluginContext）提供：
+
+- `ctx.on(event, callback)`：订阅事件（支持 sync / async 回调）
+- `ctx.once(event, callback)`：订阅一次性事件
+- `ctx.emit(event, **payload)`：触发事件（一般用于插件间通信）
+- `ctx.logger`：带插件名前缀的 logger
+
+> 注意：插件通过 `ctx.on/once` 注册的回调，会自动绑定到该插件；当插件被卸载/重载时，这些回调会被自动移除，避免重复注册/内存泄漏。
+
+
+### 示例插件
+
+仓库自带示例插件：`auth_test.py`，在用户鉴权成功后向该用户发送：
+
+> `插件测试v0.0.1`
+
+你可以直接修改该文件保存，观察服务端日志出现 `Detected change, reloading`，无需重启服务。
+
+---
+
 ## 贡献
 
 欢迎提交 Issue 和 Pull Request！
