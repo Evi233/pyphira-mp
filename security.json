@@ -1,0 +1,13 @@
+{
+  "ops": [],
+  "blacklist_ips": {},
+  "bans": [
+    {
+      "type": "id",
+      "target": "1896480",
+      "expire_at": 1770988864.1432822,
+      "reason": "测试",
+      "created_at": 1770988844.1432822
+    }
+  ]
+}

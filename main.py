@@ -4,6 +4,7 @@ import os
 import random
 import sys
 import functools
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -17,6 +18,9 @@ from utils.phiraapi import PhiraFetcher
 from utils.room import *
 from utils.eventbus import EventBus
 from utils.plugin_manager import PluginManager
+from utils.commands import Command, CommandContext, CommandRegistry
+from utils.console import console_loop
+from utils.security import SecurityStore
 from rymc.phira.protocol.data import UserProfile
 from rymc.phira.protocol.data.message import *
 from rymc.phira.protocol.handler import SimplePacketHandler
@@ -55,7 +59,28 @@ fetcher = PhiraFetcher()
 # 初始化TTL缓存: 最大1000个token，每个存活5分钟
 auth_cache = TTLCache(maxsize=1000, ttl=300)
 online_user_list = {}
+online_profiles = {}
 git_info = gitutil.get_git_version(str(Path(__file__).resolve().parent))
+
+
+class ServerState:
+    def __init__(self, *, host: str, port: int, git_info, security: SecurityStore):
+        self.host = host
+        self.port = port
+        self.git_info = git_info
+        self.security = security
+
+        # runtime refs
+        self.online_user_list = online_user_list
+        self.online_profiles = online_profiles
+        from utils import room as room_mod
+
+        self.rooms = room_mod.rooms
+
+        # soft room limits: rid -> max_players
+        self.room_limits = {}
+
+        self.restart_requested = False
 
 
 class MainHandler(SimplePacketHandler):
@@ -130,6 +155,20 @@ class MainHandler(SimplePacketHandler):
         logger.info(f"Authenticate with token {packet.token}")
         user_info = self._get_cached_user_info(packet.token)
 
+        # Ban check by user id
+        try:
+            sec: SecurityStore = getattr(self, "security_store", None)
+            if sec is not None:
+                rec = sec.is_banned("id", str(user_info.id))
+                if rec is not None:
+                    reason = rec.reason or "banned"
+                    packet_failed = ClientBoundAuthenticatePacket.Failed(f"Banned: {reason}")
+                    self.connection.send(packet_failed)
+                    self.connection.close()
+                    return
+        except Exception:
+            logger.exception("Security check failed (id)")
+
         if user_info.id in online_user_list:
             old_connection: Connection = online_user_list[user_info.id]
             if not old_connection.is_closed():
@@ -142,6 +181,7 @@ class MainHandler(SimplePacketHandler):
                 old_connection.closeHandler()
 
         online_user_list[user_info.id] = self.connection
+        online_profiles[user_info.id] = user_info
 
         self.user_info = user_info
         self.user_lang = user_info.language
@@ -194,6 +234,7 @@ class MainHandler(SimplePacketHandler):
         if hasattr(self, 'user_info') and self.user_info:
             logger.info(f"用户 [{self.user_info.id}] {self.user_info.name} 下线。")
             del online_user_list[self.user_info.id]
+            online_profiles.pop(self.user_info.id, None)
             logger.debug(f"Online user list after disconnect: {online_user_list}")
             # 获取这个用户所在的所有房间
             rooms_of_user = get_rooms_of_user(self.user_info.id)
@@ -864,6 +905,8 @@ class MainHandler(SimplePacketHandler):
 
 def handle_connection(connection: Connection):
     handler = MainHandler(connection, event_bus)
+    # inject security for authenticate check
+    handler.security_store = security_store
 
     def _on_packet(packet):
         # Generic packet events (for plugins)
@@ -893,11 +936,75 @@ if __name__ == '__main__':
     async def _main() -> None:
         # Global event bus + plugin manager (must start within a running loop)
         global event_bus
+        global security_store
+
         event_bus = EventBus()
+        security_store = SecurityStore("security.json")
         plugin_manager = PluginManager(event_bus, plugins_dir="plugins", poll_interval=1.0)
         plugin_manager.start()
 
-        server = Server(HOST, PORT, handle_connection)
+        shutdown_event = asyncio.Event()
+        registry = CommandRegistry()
+        state = ServerState(host=HOST, port=PORT, git_info=git_info, security=security_store)
+
+        ctx = CommandContext(
+            bus=event_bus,
+            plugin_manager=plugin_manager,
+            server_state=state,
+            shutdown_event=shutdown_event,
+            logger=logging.getLogger("console"),
+        )
+
+        # plugin unload => remove commands registered by that plugin (owner=module_name)
+        try:
+            def _on_plugin_unloaded(module_name=None, **_):
+                registry.off_owner(module_name)
+
+            event_bus.on("plugin.unloaded", _on_plugin_unloaded, owner="core")
+        except Exception:
+            logger.exception("Failed to subscribe plugin.unloaded")
+
+        # built-in minimal commands (always available)
+        registry.register(
+            Command(
+                name="help",
+                usage="/help",
+                help="显示本帮助菜单",
+                handler=lambda c, a: c.println(registry.format_help()),
+            )
+        )
+
+        # Let plugins register console commands
+        try:
+            event_bus.emit("commands.init", registry=registry, ctx=ctx)
+        except Exception:
+            logger.exception("Failed to emit commands.init")
+
+        # Start console loop
+        console_task = asyncio.create_task(console_loop(registry, ctx, prompt="> "))
+
+        server = Server(HOST, PORT, handle_connection, security_store=security_store)
         await server.start()
+
+        # Wait for shutdown requested by console command
+        await shutdown_event.wait()
+
+        # shutdown sequence
+        try:
+            plugin_manager.stop()
+        except Exception:
+            logger.exception("PluginManager stop failed")
+        try:
+            await server.stop()
+        except Exception:
+            logger.exception("Server stop failed")
+        try:
+            console_task.cancel()
+        except Exception:
+            pass
+
+        if state.restart_requested:
+            logger.warning("Restart requested, execv...")
+            os.execv(sys.executable, [sys.executable] + sys.argv)
 
     asyncio.run(_main())

@@ -63,7 +63,7 @@ pyphira-mp 内置了一个轻量的**事件驱动插件系统**：
 - 插件目录固定为项目根目录：`./plugins/`
 - 插件是普通的 `.py` 文件，直接丢进该目录即可被加载
 - 运行中支持**热重载**：新增/修改/删除插件文件，会自动加载/重载/卸载（默认 1 秒轮询一次文件 `mtime`，不依赖额外第三方库）
-
+- 内置的console_admin是指令系统，可以删除来取消指令
 更完整的文档请见：[`pyphira-mp-plugin-example`](https://github.com/evi233/pyphira-mp-plugin-example)
 
 ### 插件文件结构

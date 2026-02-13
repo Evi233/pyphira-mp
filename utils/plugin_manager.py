@@ -111,6 +111,10 @@ class PluginManager:
                 mtime=mtime,
             )
             logger.info("[PluginManager] Loaded plugin %s (%s)", path.stem, path)
+            try:
+                self.bus.emit("plugin.loaded", name=path.stem, path=str(path), module_name=module_name)
+            except Exception:
+                logger.exception("[PluginManager] Failed to emit plugin.loaded")
         except Exception:
             logger.exception("[PluginManager] Failed to load plugin: %s", path)
 
@@ -133,6 +137,15 @@ class PluginManager:
             # remove module cache
             sys.modules.pop(plugin.module_name, None)
             logger.info("[PluginManager] Unloaded plugin %s", plugin.name)
+            try:
+                self.bus.emit(
+                    "plugin.unloaded",
+                    name=plugin.name,
+                    path=str(plugin.path),
+                    module_name=plugin.module_name,
+                )
+            except Exception:
+                logger.exception("[PluginManager] Failed to emit plugin.unloaded")
         except Exception:
             logger.exception("[PluginManager] Failed to unload plugin: %s", plugin.name)
 
