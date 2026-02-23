@@ -400,26 +400,49 @@ def on_room_create(roomId, user_info, **kwargs):
 
 # ==================== 插件生命周期 ====================
 def setup(ctx):
-    # 【修复重点】：通过监听 commands.init 事件来抓取到真正的 ServerState，
-    # 这样就能和 console_admin 同步使用 room_limits 字典了。
-    def on_commands_init(registry=None, ctx=None, **_):
+    # 1. 同步控制台的房间人数限制
+    def on_commands_init(registry=None, context=None, **_):
         global room_limits_ref
-        if ctx and hasattr(ctx, "server_state"):
-            room_limits_ref = ctx.server_state.room_limits
+        if context and hasattr(context, "server_state"):
+            room_limits_ref = context.server_state.room_limits
             
     ctx.on("commands.init", on_commands_init)
     
-    # 房间拦截器（根据你的核心事件名注册，如果是另外的名字可修改）
+    # 2. 拦截房间创建
     ctx.on("room.before_create", on_room_create)
     
+    # 3. 【修复 Ctrl+C 卡死的核心代码】
+    # 强制接管 SIGINT (Ctrl+C) 信号，主动触发 pyphira-mp 的安全停机事件
+    import signal
+    def handle_sigint(signum, frame):
+        logger.warning("接收到 Ctrl+C (SIGINT)，正在通知主程序及所有插件安全停机...")
+        ctx.shutdown_event.set()
+        
+    try:
+        # 仅在主线程中生效，如果抛出 ValueError 则忽略
+        signal.signal(signal.SIGINT, handle_sigint)
+    except ValueError:
+        pass
+
+    # 4. 启动 Web 服务
     port = int(os.environ.get("HTTP_PORT", 12347))
     logger.info(f"正在启动 HTTP API 服务 (端口 {port})...")
     
     loop = asyncio.get_event_loop()
-    web_task = loop.create_task(app.run_task(host='0.0.0.0', port=port))
+    
+    # 5. 定义 Quart 的联动关闭触发器
+    async def quart_shutdown_trigger():
+        # 死等主程序的关机信号，一旦收到，Quart 也会自行优雅切断所有连接
+        await ctx.shutdown_event.wait()
+        
+    web_task = loop.create_task(app.run_task(
+        host='0.0.0.0', 
+        port=port, 
+        shutdown_trigger=quart_shutdown_trigger
+    ))
     
     def teardown():
-        logger.info("正在关闭 HTTP API 服务...")
+        logger.info("正在卸载 HTTP API 服务...")
         if not web_task.done():
             web_task.cancel()
             
