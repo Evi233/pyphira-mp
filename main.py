@@ -233,23 +233,47 @@ class MainHandler(SimplePacketHandler):
         # 检查这个玩家是否已经鉴权（登录），并且有 user_info 信息
         if hasattr(self, 'user_info') and self.user_info:
             logger.info(f"用户 [{self.user_info.id}] {self.user_info.name} 下线。")
-            del online_user_list[self.user_info.id]
+            online_user_list.pop(self.user_info.id, None)
             online_profiles.pop(self.user_info.id, None)
             logger.debug(f"Online user list after disconnect: {online_user_list}")
             # 获取这个用户所在的所有房间
             rooms_of_user = get_rooms_of_user(self.user_info.id)
             if rooms_of_user["status"] == "0":
-                for roomId in rooms_of_user["rooms"]:
+                for roomId in list(rooms_of_user["rooms"]):
+                    room = rooms.get(roomId)
+                    if room is None:
+                        continue
+
+                    was_host = room.host == self.user_info.id
                     # 从房间里移除玩家
-                    player_leave(roomId, self.user_info.id)
+                    leave_result = player_leave(roomId, self.user_info.id)
+                    if leave_result.get("status") != "0":
+                        continue
+
+                    room = rooms.get(roomId)
+                    if room is None:
+                        continue
+
+                    # 房间没人了，直接销毁，避免出现 0 人脏房间
+                    if len(room.users) == 0:
+                        logger.info(f"Room {roomId} is empty after disconnect, destroying...")
+                        destroy_room(roomId)
+                        continue
+
+                    # 房主掉线时转移房主，避免无人可控房间
+                    if was_host:
+                        new_host_id = random.choice(list(room.users.keys()))
+                        change_host(roomId, new_host_id)
+                        if new_host_id in room.users:
+                            room.users[new_host_id].connection.send(ClientBoundChangeHostPacket(True))
+
                     # 如果房间正在游玩，检查剩余玩家是否满足结束条件
-                    if roomId in rooms and isinstance(rooms[roomId].state, Playing):
+                    if isinstance(room.state, Playing):
                         self.checkAllFinished(roomId)
+
                     # 提醒这些房间里的所有其他玩家
-                    packet = ClientBoundMessagePacket(
-                        LeaveRoomMessage(self.user_info.id, self.user_info.name))
-                    # 广播给房间里的其他人
-                    for _, room_user in rooms[roomId].users.items():
+                    packet = ClientBoundMessagePacket(LeaveRoomMessage(self.user_info.id, self.user_info.name))
+                    for _, room_user in room.users.items():
                         if room_user.connection != self.connection:
                             room_user.connection.send(packet)
 

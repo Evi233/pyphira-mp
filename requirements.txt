@@ -3,3 +3,5 @@ pydantic
 tenacity
 asyncio
 cachetools
+fastapi
+uvicorn

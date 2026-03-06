@@ -1,132 +1,182 @@
 # -*- coding: utf-8 -*-
 """
 HTTP API Plugin for pyphira-mp
-提供房间查询、管理、OTP鉴权、封禁控制的 HTTP 接口。
+提供房间查询、管理、OTP 鉴权、封禁控制的 HTTP 接口。
 """
 
 import asyncio
 import logging
 import os
+import secrets
+import sys
 import time
 import uuid
-import secrets
-from typing import Dict, Any
-from quart import Quart, request, jsonify
+from typing import Any, Dict
 
-# 引入核心全局状态
-import sys
-main_module = sys.modules['__main__']
-from utils.room import rooms, destroy_room
+import uvicorn
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-# 插件信息
+from utils.room import destroy_room, rooms
+
+main_module = sys.modules["__main__"]
+
 PLUGIN_INFO = {
     "name": "http_api",
-    "version": "1.0.1",
+    "version": "1.1.0",
 }
 
-app = Quart(__name__)
+app = FastAPI()
 logger = logging.getLogger("plugin.http_api")
 
-# 抑制 Quart 默认日志
-logging.getLogger('quart.app').setLevel(logging.WARNING)
-logging.getLogger('quart.serving').setLevel(logging.WARNING)
+logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
-# 全局状态引用
+
+def get_cors_origins():
+    raw = os.environ.get("HTTP_API_CORS_ORIGINS", "https://admin.phira.link")
+    origins = [item.strip() for item in raw.split(",") if item.strip()]
+    return origins or ["https://admin.phira.link"]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_cors_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 room_creation_enabled = True
-room_limits_ref = {}  # 用于同步控制台的房间人数限制
+room_limits_ref = {}
 
-# ==================== OTP 与鉴权数据结构 ====================
-otp_sessions: Dict[str, Dict[str, Any]] = {}  # ssid -> {otp, expires_at}
-temp_tokens: Dict[str, Dict[str, Any]] = {}   # token -> {ip, expires_at}
+otp_sessions: Dict[str, Dict[str, Any]] = {}
+temp_tokens: Dict[str, Dict[str, Any]] = {}
 
-# ==================== 工具函数 ====================
+
 def get_admin_token():
     return os.environ.get("ADMIN_TOKEN", None)
 
+
 def clean_expired_tokens():
-    """清理过期的 OTP 和 Token"""
     now = time.time()
-    for k in list(otp_sessions.keys()):
-        if otp_sessions[k]["expires_at"] < now:
-            del otp_sessions[k]
-    for k in list(temp_tokens.keys()):
-        if temp_tokens[k]["expires_at"] < now:
-            del temp_tokens[k]
+    for key in list(otp_sessions.keys()):
+        if otp_sessions[key]["expires_at"] < now:
+            del otp_sessions[key]
+    for key in list(temp_tokens.keys()):
+        if temp_tokens[key]["expires_at"] < now:
+            del temp_tokens[key]
 
-# ==================== 鉴权中间件 ====================
-@app.before_request
-async def auth_middleware():
-    """管理员 API 鉴权拦截"""
-    path = request.path
+
+def parse_room_id(room_id: str):
+    try:
+        return int(room_id) if room_id.isdigit() else room_id
+    except ValueError:
+        return None
+
+
+async def read_json_body(request: Request) -> Dict[str, Any]:
+    try:
+        body = await request.json()
+        return body if isinstance(body, dict) else {}
+    except Exception:
+        return {}
+
+
+@app.middleware("http")
+async def private_network_middleware(request: Request, call_next):
+    response = await call_next(request)
+    if request.headers.get("access-control-request-private-network", "").lower() == "true":
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
     if not path.startswith("/admin/"):
-        return  # 非管理接口放行
+        return await call_next(request)
     if path in ["/admin/otp/request", "/admin/otp/verify"]:
-        return  # OTP 接口放行
+        return await call_next(request)
 
-    # 获取 Token
-    token = request.headers.get("X-Admin-Token") or \
-            request.headers.get("Authorization") or \
-            request.args.get("token")
+    token = (
+        request.headers.get("X-Admin-Token")
+        or request.headers.get("Authorization")
+        or request.query_params.get("token")
+    )
     if token and token.startswith("Bearer "):
         token = token[7:]
 
     perm_token = get_admin_token()
-
     if perm_token:
         if token != perm_token:
-            return jsonify({"ok": False, "error": "unauthorized"}), 401
-        return  # 永久 Token 验证通过
+            return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+        return await call_next(request)
 
     if not token:
-        return jsonify({"ok": False, "error": "admin-disabled"}), 403
+        return JSONResponse({"ok": False, "error": "admin-disabled"}, status_code=403)
 
-    # 验证临时 Token
     clean_expired_tokens()
+    client_ip = request.client.host if request.client else None
     t_info = temp_tokens.get(token)
-    if not t_info or t_info["expires_at"] < time.time() or t_info["ip"] != request.remote_addr:
-        return jsonify({"ok": False, "error": "token-expired"}), 401
+    if not t_info or t_info["expires_at"] < time.time() or t_info["ip"] != client_ip:
+        return JSONResponse({"ok": False, "error": "token-expired"}, status_code=401)
 
-# ==================== OTP 接口 ====================
-@app.route('/admin/otp/request', methods=['POST'])
+    return await call_next(request)
+
+
+@app.post("/admin/otp/request")
 async def otp_request():
     if get_admin_token():
-        return jsonify({"ok": False, "error": "otp-disabled-when-token-configured"}), 403
-    
+        return JSONResponse(
+            {"ok": False, "error": "otp-disabled-when-token-configured"},
+            status_code=403,
+        )
+
     clean_expired_tokens()
     ssid = str(uuid.uuid4())
     otp = secrets.token_hex(4)
-    expires_in = 300000  # 5 minutes in ms
+    expires_in = 300000
     otp_sessions[ssid] = {"otp": otp, "expires_at": time.time() + 300}
-    
-    logger.info(f"[OTP Request] SSID: {ssid}, OTP: {otp}, Expires in 5 minutes")
-    return jsonify({"ok": True, "ssid": ssid, "expiresIn": expires_in})
 
-@app.route('/admin/otp/verify', methods=['POST'])
-async def otp_verify():
+    logger.info("[OTP Request] SSID: %s, OTP: %s, Expires in 5 minutes", ssid, otp)
+    return {"ok": True, "ssid": ssid, "expiresIn": expires_in}
+
+
+@app.post("/admin/otp/verify")
+async def otp_verify(request: Request):
     if get_admin_token():
-        return jsonify({"ok": False, "error": "otp-disabled-when-token-configured"}), 403
-    
-    data = await request.get_json() or {}
+        return JSONResponse(
+            {"ok": False, "error": "otp-disabled-when-token-configured"},
+            status_code=403,
+        )
+
+    data = await read_json_body(request)
     ssid = data.get("ssid")
     otp = data.get("otp")
-    
+
     clean_expired_tokens()
     session = otp_sessions.get(ssid)
     if not session or session["otp"] != otp or session["expires_at"] < time.time():
-        return jsonify({"ok": False, "error": "invalid-or-expired-otp"}), 401
-    
-    del otp_sessions[ssid]
-    
-    token = str(uuid.uuid4())
-    expires_in = 14400000  # 4 hours in ms
-    temp_tokens[token] = {
-        "ip": request.remote_addr,
-        "expires_at": time.time() + 14400
-    }
-    return jsonify({"ok": True, "token": token, "expiresAt": int(time.time()*1000) + expires_in, "expiresIn": expires_in})
+        return JSONResponse({"ok": False, "error": "invalid-or-expired-otp"}, status_code=401)
 
-# ==================== 公共接口 ====================
-@app.route('/room', methods=['GET'])
+    del otp_sessions[ssid]
+    token = str(uuid.uuid4())
+    expires_in = 14400000
+    temp_tokens[token] = {
+        "ip": request.client.host if request.client else None,
+        "expires_at": time.time() + 14400,
+    }
+    return {
+        "ok": True,
+        "token": token,
+        "expiresAt": int(time.time() * 1000) + expires_in,
+        "expiresIn": expires_in,
+    }
+
+
+@app.get("/room")
 async def get_public_rooms():
     res = []
     for rid, room in rooms.items():
@@ -138,81 +188,93 @@ async def get_public_rooms():
             if uid == room.host:
                 host_info["name"] = name
 
-        res.append({
-            "roomid": str(rid),
-            "cycle": getattr(room, 'cycle', False),
-            "lock": getattr(room, 'locked', False),
-            "host": host_info,
-            "state": type(room.state).__name__.lower(),
-            "chart": {"id": getattr(room, 'chart', None), "name": str(getattr(room, 'chart', 'Unknown'))},
-            "players": players
-        })
-    return jsonify({"rooms": res, "total": len(res)})
+        res.append(
+            {
+                "roomid": str(rid),
+                "cycle": getattr(room, "cycle", False),
+                "lock": getattr(room, "locked", False),
+                "host": host_info,
+                "state": type(room.state).__name__.lower(),
+                "chart": {
+                    "id": getattr(room, "chart", None),
+                    "name": str(getattr(room, "chart", "Unknown")),
+                },
+                "players": players,
+            }
+        )
+    return {"rooms": res, "total": len(res)}
 
-# ==================== 管理员接口 (需要鉴权) ====================
-@app.route('/admin/rooms', methods=['GET'])
+
+@app.get("/admin/rooms")
 async def admin_get_rooms():
     res = []
     for rid, room in rooms.items():
         users_list = []
         for uid, ruser in room.users.items():
-            users_list.append({
-                "id": uid,
-                "name": getattr(ruser.info, "name", str(uid)),
-                "connected": ruser.connection is not None,
-                "is_host": uid == room.host,
-                "finished": uid in getattr(room, 'finished', {}),
-                "ready": uid in getattr(room, 'ready', {})
-            })
-        
-        res.append({
-            "roomid": str(rid),
-            "max_users": room_limits_ref.get(rid, "无限制"),
-            "live": getattr(room, 'live', False),
-            "locked": getattr(room, 'locked', False),
-            "cycle": getattr(room, 'cycle', False),
-            "host": {"id": room.host},
-            "state": {"type": type(room.state).__name__.lower()},
-            "chart": {"id": getattr(room, 'chart', None)},
-            "users": users_list,
-            "contest": getattr(room, 'contest_mode', False),
-            "whitelist": getattr(room, 'whitelist', [])
-        })
-    return jsonify({"ok": True, "rooms": res})
+            users_list.append(
+                {
+                    "id": uid,
+                    "name": getattr(ruser.info, "name", str(uid)),
+                    "connected": ruser.connection is not None,
+                    "is_host": uid == room.host,
+                    "finished": uid in getattr(room, "finished", {}),
+                    "ready": uid in getattr(room, "ready", {}),
+                }
+            )
 
-@app.route('/admin/rooms/<room_id>/max_users', methods=['POST'])
-async def admin_set_max_users(room_id):
-    data = await request.get_json() or {}
+        res.append(
+            {
+                "roomid": str(rid),
+                "max_users": room_limits_ref.get(rid, "无限制"),
+                "live": getattr(room, "live", False),
+                "locked": getattr(room, "locked", False),
+                "cycle": getattr(room, "cycle", False),
+                "host": {"id": room.host},
+                "state": {"type": type(room.state).__name__.lower()},
+                "chart": {"id": getattr(room, "chart", None)},
+                "users": users_list,
+                "contest": getattr(room, "contest_mode", False),
+                "whitelist": getattr(room, "whitelist", []),
+            }
+        )
+    return {"ok": True, "rooms": res}
+
+
+@app.post("/admin/rooms/{room_id}/max_users")
+async def admin_set_max_users(room_id: str, request: Request):
+    data = await read_json_body(request)
     max_users = data.get("maxUsers")
     if not isinstance(max_users, int) or not (1 <= max_users <= 64):
-        return jsonify({"ok": False, "error": "bad-max-users"}), 400
-    try:
-        rid = int(room_id) if room_id.isdigit() else room_id
-    except ValueError:
-        return jsonify({"ok": False, "error": "bad-room-id"}), 400
+        return JSONResponse({"ok": False, "error": "bad-max-users"}, status_code=400)
+
+    rid = parse_room_id(room_id)
+    if rid is None:
+        return JSONResponse({"ok": False, "error": "bad-room-id"}, status_code=400)
 
     if rid not in rooms:
-        return jsonify({"ok": False, "error": "room-not-found"}), 404
-        
-    room_limits_ref[rid] = max_users
-    return jsonify({"ok": True, "roomid": str(rid), "max_users": max_users})
+        return JSONResponse({"ok": False, "error": "room-not-found"}, status_code=404)
 
-@app.route('/admin/rooms/<room_id>/disband', methods=['POST'])
-async def admin_disband_room(room_id):
-    try:
-        rid = int(room_id) if room_id.isdigit() else room_id
-    except ValueError:
-        return jsonify({"ok": False, "error": "bad-room-id"}), 400
+    room_limits_ref[rid] = max_users
+    return {"ok": True, "roomid": str(rid), "max_users": max_users}
+
+
+@app.post("/admin/rooms/{room_id}/disband")
+async def admin_disband_room(room_id: str):
+    rid = parse_room_id(room_id)
+    if rid is None:
+        return JSONResponse({"ok": False, "error": "bad-room-id"}, status_code=400)
 
     room = rooms.get(rid)
     if not room:
-        return jsonify({"ok": False, "error": "room-not-found"}), 404
+        return JSONResponse({"ok": False, "error": "room-not-found"}, status_code=404)
 
-    # 通知并踢出所有人
-    from rymc.phira.protocol.packet.clientbound import ClientBoundMessagePacket, ClientBoundLeaveRoomPacket
     from rymc.phira.protocol.data.message import LeaveRoomMessage
+    from rymc.phira.protocol.packet.clientbound import (
+        ClientBoundLeaveRoomPacket,
+        ClientBoundMessagePacket,
+    )
 
-    for uid, ruser in list(room.users.items()):
+    for _, ruser in list(room.users.items()):
         try:
             ruser.connection.send(ClientBoundMessagePacket(LeaveRoomMessage(-1, "房间已被管理员强制解散")))
             ruser.connection.send(ClientBoundLeaveRoomPacket.Success())
@@ -220,30 +282,34 @@ async def admin_disband_room(room_id):
             pass
 
     destroy_room(rid)
-    return jsonify({"ok": True, "roomid": str(rid)})
+    return {"ok": True, "roomid": str(rid)}
 
-@app.route('/admin/room-creation/config', methods=['GET', 'POST'])
-async def admin_room_creation():
+
+@app.get("/admin/room-creation/config")
+async def admin_room_creation_get():
+    return {"ok": True, "enabled": room_creation_enabled}
+
+
+@app.post("/admin/room-creation/config")
+async def admin_room_creation_post(request: Request):
     global room_creation_enabled
-    if request.method == 'GET':
-        return jsonify({"ok": True, "enabled": room_creation_enabled})
-    
-    data = await request.get_json() or {}
+    data = await read_json_body(request)
     if "enabled" not in data:
-        return jsonify({"ok": False, "error": "bad-enabled"}), 400
-        
-    room_creation_enabled = bool(data["enabled"])
-    return jsonify({"ok": True, "enabled": room_creation_enabled})
+        return JSONResponse({"ok": False, "error": "bad-enabled"}, status_code=400)
 
-@app.route('/admin/ban/user', methods=['POST'])
-async def admin_ban_user():
-    data = await request.get_json() or {}
+    room_creation_enabled = bool(data["enabled"])
+    return {"ok": True, "enabled": room_creation_enabled}
+
+
+@app.post("/admin/ban/user")
+async def admin_ban_user(request: Request):
+    data = await read_json_body(request)
     uid = data.get("userId")
     banned = data.get("banned", True)
     disconnect = data.get("disconnect", True)
 
     if not uid:
-        return jsonify({"ok": False, "error": "bad-user-id"}), 400
+        return JSONResponse({"ok": False, "error": "bad-user-id"}, status_code=400)
 
     if banned:
         main_module.security_store.add_ban("id", str(uid), None, "API 封禁")
@@ -253,100 +319,123 @@ async def admin_ban_user():
     if disconnect and banned:
         conn = main_module.online_user_list.get(uid) or main_module.online_user_list.get(str(uid))
         if conn:
-            try: conn.close()
-            except Exception: pass
+            try:
+                conn.close()
+            except Exception:
+                pass
 
-    return jsonify({"ok": True})
+    return {"ok": True}
 
-@app.route('/admin/users/<user_id>/disconnect', methods=['POST'])
-async def admin_kick_user(user_id):
-    try:
-        uid = int(user_id) if user_id.isdigit() else user_id
-    except ValueError:
-        return jsonify({"ok": False, "error": "bad-user-id"}), 400
+
+@app.post("/admin/users/{user_id}/disconnect")
+async def admin_kick_user(user_id: str):
+    uid = parse_room_id(user_id)
+    if uid is None:
+        return JSONResponse({"ok": False, "error": "bad-user-id"}, status_code=400)
 
     conn = main_module.online_user_list.get(uid)
     if not conn:
-        return jsonify({"ok": False, "error": "user-not-connected"}), 404
-        
+        return JSONResponse({"ok": False, "error": "user-not-connected"}, status_code=404)
+
     try:
         conn.close()
     except Exception:
         pass
-    return jsonify({"ok": True})
+    return {"ok": True}
 
-@app.route('/admin/broadcast', methods=['POST'])
-async def admin_broadcast():
-    data = await request.get_json() or {}
+
+@app.post("/admin/broadcast")
+async def admin_broadcast(request: Request):
+    data = await read_json_body(request)
     msg = data.get("message", "")
-    if not msg: return jsonify({"ok": False, "error": "bad-message"}), 400
-    if len(msg) > 200: return jsonify({"ok": False, "error": "message-too-long"}), 400
+    if not msg:
+        return JSONResponse({"ok": False, "error": "bad-message"}, status_code=400)
+    if len(msg) > 200:
+        return JSONResponse({"ok": False, "error": "message-too-long"}, status_code=400)
 
-    from rymc.phira.protocol.packet.clientbound import ClientBoundMessagePacket
     from rymc.phira.protocol.data.message import ChatMessage
+    from rymc.phira.protocol.packet.clientbound import ClientBoundMessagePacket
 
     packet = ClientBoundMessagePacket(ChatMessage(0, f"[管理员通知] {msg}"))
     rooms_count = len(rooms)
-    
-    for uid, conn in main_module.online_user_list.items():
-        try: conn.send(packet)
-        except Exception: pass
 
-    return jsonify({"ok": True, "rooms": rooms_count})
+    for _, conn in main_module.online_user_list.items():
+        try:
+            conn.send(packet)
+        except Exception:
+            pass
 
-@app.route('/admin/rooms/<room_id>/chat', methods=['POST'])
-async def admin_room_chat(room_id):
-    data = await request.get_json() or {}
+    return {"ok": True, "rooms": rooms_count}
+
+
+@app.post("/admin/rooms/{room_id}/chat")
+async def admin_room_chat(room_id: str, request: Request):
+    data = await read_json_body(request)
     msg = data.get("message", "")
-    if not msg: return jsonify({"ok": False, "error": "bad-message"}), 400
-    if len(msg) > 200: return jsonify({"ok": False, "error": "message-too-long"}), 400
+    if not msg:
+        return JSONResponse({"ok": False, "error": "bad-message"}, status_code=400)
+    if len(msg) > 200:
+        return JSONResponse({"ok": False, "error": "message-too-long"}, status_code=400)
 
-    try: rid = int(room_id) if room_id.isdigit() else room_id
-    except ValueError: return jsonify({"ok": False, "error": "bad-room-id"}), 400
+    rid = parse_room_id(room_id)
+    if rid is None:
+        return JSONResponse({"ok": False, "error": "bad-room-id"}, status_code=400)
 
     room = rooms.get(rid)
-    if not room: return jsonify({"ok": False, "error": "room-not-found"}), 404
+    if not room:
+        return JSONResponse({"ok": False, "error": "room-not-found"}, status_code=404)
 
-    from rymc.phira.protocol.packet.clientbound import ClientBoundMessagePacket
     from rymc.phira.protocol.data.message import ChatMessage
-    packet = ClientBoundMessagePacket(ChatMessage(0, f"[系统] {msg}"))
-    
-    for uid, ruser in room.users.items():
-        try: ruser.connection.send(packet)
-        except Exception: pass
-        
-    return jsonify({"ok": True})
+    from rymc.phira.protocol.packet.clientbound import ClientBoundMessagePacket
 
-# ==================== IP 黑名单接口 ====================
-@app.route('/admin/ip-blacklist', methods=['GET'])
+    packet = ClientBoundMessagePacket(ChatMessage(0, f"[系统] {msg}"))
+
+    for _, ruser in room.users.items():
+        try:
+            ruser.connection.send(packet)
+        except Exception:
+            pass
+
+    return {"ok": True}
+
+
+@app.get("/admin/ip-blacklist")
 async def admin_get_blacklist():
     bl = main_module.security_store.list_blacklist_ips()
-    res = [{"ip": ip, "expiresIn": int((exp - time.time())*1000) if exp else None} for ip, exp in bl.items()]
-    return jsonify({"ok": True, "blacklist": res})
+    res = [
+        {"ip": ip, "expiresIn": int((exp - time.time()) * 1000) if exp else None}
+        for ip, exp in bl.items()
+    ]
+    return {"ok": True, "blacklist": res}
 
-@app.route('/admin/ip-blacklist/remove', methods=['POST'])
-async def admin_remove_blacklist():
-    data = await request.get_json() or {}
+
+@app.post("/admin/ip-blacklist/remove")
+async def admin_remove_blacklist(request: Request):
+    data = await read_json_body(request)
     ip = data.get("ip")
-    if ip: main_module.security_store.remove_blacklist_ip(ip)
-    return jsonify({"ok": True})
+    if ip:
+        main_module.security_store.remove_blacklist_ip(ip)
+    return {"ok": True}
 
-@app.route('/admin/ip-blacklist/clear', methods=['POST'])
+
+@app.post("/admin/ip-blacklist/clear")
 async def admin_clear_blacklist():
     main_module.security_store.blacklist_ips.clear()
     main_module.security_store.save()
-    return jsonify({"ok": True})
+    return {"ok": True}
 
-# ==================== 比赛模式接口 ====================
-@app.route('/admin/contest/rooms/<room_id>/config', methods=['POST'])
-async def admin_contest_config(room_id):
-    data = await request.get_json() or {}
-    try: rid = int(room_id) if room_id.isdigit() else room_id
-    except ValueError: return jsonify({"ok": False, "error": "bad-room-id"}), 400
-    
+
+@app.post("/admin/contest/rooms/{room_id}/config")
+async def admin_contest_config(room_id: str, request: Request):
+    data = await read_json_body(request)
+    rid = parse_room_id(room_id)
+    if rid is None:
+        return JSONResponse({"ok": False, "error": "bad-room-id"}, status_code=400)
+
     room = rooms.get(rid)
-    if not room: return jsonify({"ok": False, "error": "room-not-found"}), 404
-    
+    if not room:
+        return JSONResponse({"ok": False, "error": "room-not-found"}, status_code=404)
+
     enabled = data.get("enabled", False)
     room.contest_mode = enabled
     if enabled:
@@ -356,94 +445,81 @@ async def admin_contest_config(room_id):
         room.whitelist = whitelist
     else:
         room.whitelist = []
-        
-    return jsonify({"ok": True})
 
-@app.route('/admin/contest/rooms/<room_id>/start', methods=['POST'])
-async def admin_contest_start(room_id):
-    data = await request.get_json() or {}
-    try: rid = int(room_id) if room_id.isdigit() else room_id
-    except ValueError: return jsonify({"ok": False, "error": "bad-room-id"}), 400
-    
+    return {"ok": True}
+
+
+@app.post("/admin/contest/rooms/{room_id}/start")
+async def admin_contest_start(room_id: str, request: Request):
+    data = await read_json_body(request)
+    rid = parse_room_id(room_id)
+    if rid is None:
+        return JSONResponse({"ok": False, "error": "bad-room-id"}, status_code=400)
+
     room = rooms.get(rid)
-    if not room: return jsonify({"ok": False, "error": "room-not-found"}), 404
-    
-    if not getattr(room, 'contest_mode', False):
-        return jsonify({"ok": False, "error": "not-a-contest-room"}), 400
-        
-    force = data.get("force", False)
-    if not force:
-        if len(room.ready) < len(room.users):
-            return jsonify({"ok": False, "error": "not-all-ready"}), 400
+    if not room:
+        return JSONResponse({"ok": False, "error": "room-not-found"}, status_code=404)
 
-    from rymc.phira.protocol.data.state import Playing
-    from rymc.phira.protocol.packet.clientbound import ClientBoundChangeStatePacket, ClientBoundMessagePacket
+    if not getattr(room, "contest_mode", False):
+        return JSONResponse({"ok": False, "error": "not-a-contest-room"}, status_code=400)
+
+    force = data.get("force", False)
+    if not force and len(room.ready) < len(room.users):
+        return JSONResponse({"ok": False, "error": "not-all-ready"}, status_code=400)
+
     from rymc.phira.protocol.data.message import StartPlayingMessage
-    
+    from rymc.phira.protocol.data.state import Playing
+    from rymc.phira.protocol.packet.clientbound import (
+        ClientBoundChangeStatePacket,
+        ClientBoundMessagePacket,
+    )
+
     room.ready.clear()
     room.state = Playing()
-    for uid, ru in room.users.items():
+    for _, ru in room.users.items():
         try:
             ru.connection.send(ClientBoundMessagePacket(StartPlayingMessage()))
             ru.connection.send(ClientBoundChangeStatePacket(Playing()))
-        except Exception: pass
-        
-    return jsonify({"ok": True})
+        except Exception:
+            pass
+
+    return {"ok": True}
 
 
-# ==================== 钩子事件拦截 (房间创建) ====================
 def on_room_create(roomId, user_info, **kwargs):
-    """如果关闭了房间创建，拦截此事件"""
     if not room_creation_enabled:
-        return {"status": "1"} 
+        return {"status": "1"}
     return None
 
-# ==================== 插件生命周期 ====================
-def setup(ctx):
-    # 1. 同步控制台的房间人数限制
-    def on_commands_init(registry=None, context=None, **_):
-        global room_limits_ref
-        if context and hasattr(context, "server_state"):
-            room_limits_ref = context.server_state.room_limits
-            
-    ctx.on("commands.init", on_commands_init)
-    
-    # 2. 拦截房间创建
-    ctx.on("room.before_create", on_room_create)
-    
-    # 3. 【修复 Ctrl+C 卡死的核心代码】
-    # 强制接管 SIGINT (Ctrl+C) 信号，主动触发 pyphira-mp 的安全停机事件
-    import signal
-    def handle_sigint(signum, frame):
-        logger.warning("接收到 Ctrl+C (SIGINT)，正在通知主程序及所有插件安全停机...")
-        ctx.shutdown_event.set()
-        
-    try:
-        # 仅在主线程中生效，如果抛出 ValueError 则忽略
-        signal.signal(signal.SIGINT, handle_sigint)
-    except ValueError:
-        pass
 
-    # 4. 启动 Web 服务
+def setup(ctx):
+    def on_commands_init(registry=None, ctx=None, **_):
+        global room_limits_ref
+        if ctx and hasattr(ctx, "server_state"):
+            room_limits_ref = ctx.server_state.room_limits
+
+    ctx.on("commands.init", on_commands_init)
+    ctx.on("room.before_create", on_room_create)
+
     port = int(os.environ.get("HTTP_PORT", 12347))
-    logger.info(f"正在启动 HTTP API 服务 (端口 {port})...")
-    
+    logger.info("正在启动 HTTP API 服务 (端口 %s)...", port)
+
     loop = asyncio.get_event_loop()
-    
-    # 5. 定义 Quart 的联动关闭触发器
-    async def quart_shutdown_trigger():
-        # 死等主程序的关机信号，一旦收到，Quart 也会自行优雅切断所有连接
-        await ctx.shutdown_event.wait()
-        
-    web_task = loop.create_task(app.run_task(
-        host='0.0.0.0', 
-        port=port, 
-        shutdown_trigger=quart_shutdown_trigger
-    ))
-    
+    config = uvicorn.Config(
+        app=app,
+        host="0.0.0.0",
+        port=port,
+        log_level="warning",
+        access_log=False,
+        loop="asyncio",
+    )
+    server = uvicorn.Server(config)
+    web_task = loop.create_task(server.serve())
+
     def teardown():
-        logger.info("正在卸载 HTTP API 服务...")
+        logger.info("正在关闭 HTTP API 服务...")
+        server.should_exit = True
         if not web_task.done():
             web_task.cancel()
-            
+
     return teardown
