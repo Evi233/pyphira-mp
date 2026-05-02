@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 SUPPORTED_VERSIONS = [1]
+DEFAULT_PACKET_READ_TIMEOUT = 180.0
 
 class Server:
 
@@ -23,6 +24,7 @@ class Server:
 
         self._server: Optional[asyncio.base_events.Server] = None
         self._serve_task: Optional[asyncio.Task] = None
+        self.packet_read_timeout = DEFAULT_PACKET_READ_TIMEOUT
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         addr = writer.get_extra_info('peername')
@@ -51,7 +53,14 @@ class Server:
         except Exception:
             logger.exception("Security check failed (ip)")
 
-        client_version = (await reader.readexactly(1))[0]
+        try:
+            client_version = (await reader.readexactly(1))[0]
+        except (asyncio.IncompleteReadError, ConnectionResetError, OSError):
+            logger.info("Client disconnected before handshake from %s", addr)
+            return
+        except Exception:
+            logger.exception("Failed to read client version from %s", addr)
+            return
         logger.info(f"Connected client from {addr}")
         logger.info(f"Client version: {client_version}")
 
@@ -66,9 +75,14 @@ class Server:
         try:
             self.handler(connection)
             while True:
-                connection.on_receive(await receive_message(reader))
-        except (asyncio.IncompleteReadError, ConnectionResetError):
+                data = await asyncio.wait_for(receive_message(reader), timeout=self.packet_read_timeout)
+                connection.on_receive(data)
+        except asyncio.TimeoutError:
+            logger.warning("Client idle timeout from %s", addr)
+        except (asyncio.IncompleteReadError, ConnectionResetError, OSError):
             logger.info(f"Client disconnected from {addr}")
+        except Exception:
+            logger.exception("Unhandled client loop error from %s", addr)
         finally:
             connection.close()
 

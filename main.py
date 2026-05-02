@@ -61,6 +61,9 @@ auth_cache = TTLCache(maxsize=1000, ttl=300)
 online_user_list = {}
 online_profiles = {}
 git_info = gitutil.get_git_version(str(Path(__file__).resolve().parent))
+STALE_RECONNECT_SECONDS = 120.0
+STALE_CLEANUP_SECONDS = 180.0
+STALE_CLEANUP_INTERVAL = 30.0
 
 
 class ServerState:
@@ -171,14 +174,21 @@ class MainHandler(SimplePacketHandler):
 
         if user_info.id in online_user_list:
             old_connection: Connection = online_user_list[user_info.id]
-            if not old_connection.is_closed():
+            old_is_stale = old_connection.is_stale(STALE_RECONNECT_SECONDS)
+            if old_connection.is_closing() or old_connection.is_closed() or old_is_stale:
+                logger.warning(
+                    "Replacing stale connection for user=%s (idle=%.1fs)",
+                    user_info.id,
+                    old_connection.idle_for(),
+                )
+                online_user_list.pop(user_info.id, None)
+                online_profiles.pop(user_info.id, None)
+                old_connection.close()
+            else:
                 packet = ClientBoundAuthenticatePacket.Failed(get_i10n_text(user_info.language, "user_duplicate_join"))
                 self.connection.send(packet)
                 self.connection.close()
                 return
-            else:
-                old_connection.writer = None
-                old_connection.closeHandler()
 
         online_user_list[user_info.id] = self.connection
         online_profiles[user_info.id] = user_info
@@ -233,8 +243,10 @@ class MainHandler(SimplePacketHandler):
         # 检查这个玩家是否已经鉴权（登录），并且有 user_info 信息
         if hasattr(self, 'user_info') and self.user_info:
             logger.info(f"用户 [{self.user_info.id}] {self.user_info.name} 下线。")
-            online_user_list.pop(self.user_info.id, None)
-            online_profiles.pop(self.user_info.id, None)
+            current_conn = online_user_list.get(self.user_info.id)
+            if current_conn is self.connection:
+                online_user_list.pop(self.user_info.id, None)
+                online_profiles.pop(self.user_info.id, None)
             logger.debug(f"Online user list after disconnect: {online_user_list}")
             # 获取这个用户所在的所有房间
             rooms_of_user = get_rooms_of_user(self.user_info.id)
@@ -956,6 +968,21 @@ def handle_connection(connection: Connection):
     connection.on_close(lambda: handler.on_player_disconnected())
 
 
+async def cleanup_stale_users():
+    while True:
+        try:
+            now = asyncio.get_running_loop().time()
+            for user_id, conn in list(online_user_list.items()):
+                if conn.is_closing() or conn.is_closed() or conn.is_stale(STALE_CLEANUP_SECONDS, now):
+                    logger.warning("Force cleanup stale user: %s", user_id)
+                    online_user_list.pop(user_id, None)
+                    online_profiles.pop(user_id, None)
+                    conn.close()
+        except Exception:
+            logger.exception("cleanup_stale_users failed")
+        await asyncio.sleep(STALE_CLEANUP_INTERVAL)
+
+
 if __name__ == '__main__':
     async def _main() -> None:
         # Global event bus + plugin manager (must start within a running loop)
@@ -968,6 +995,7 @@ if __name__ == '__main__':
         plugin_manager.start()
 
         shutdown_event = asyncio.Event()
+        stale_cleanup_task = asyncio.create_task(cleanup_stale_users())
         registry = CommandRegistry()
         state = ServerState(host=HOST, port=PORT, git_info=git_info, security=security_store)
 
@@ -1018,6 +1046,13 @@ if __name__ == '__main__':
             plugin_manager.stop()
         except Exception:
             logger.exception("PluginManager stop failed")
+        try:
+            stale_cleanup_task.cancel()
+            await stale_cleanup_task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
         try:
             await server.stop()
         except Exception:
